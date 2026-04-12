@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields: uid, email, displayName, photoURL, totalBalance, createdAt
+    //
+    // Collection: /users/{userId}/transactions/{transactionId}
+    // Fields: userId, title, amount, type, category, date, location, note
+    //
+    // Collection: /users/{userId}/payments/{paymentId}
+    // Fields: userId, title, amount, dueDate, status, category
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid == request.auth.uid &&
+             data.email is string;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['userId', 'title', 'amount', 'type', 'category', 'date']) &&
+             data.userId == request.auth.uid &&
+             data.amount is number &&
+             data.type in ['income', 'expense'] &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             (!('isRecurring' in data) || data.isRecurring is bool) &&
+             (!('frequency' in data) || data.frequency is string) &&
+             (!('lastGeneratedDate' in data) || data.lastGeneratedDate is timestamp) &&
+             (!('startDate' in data) || data.startDate is timestamp) &&
+             (!('endDate' in data) || data.endDate is timestamp) &&
+             (!('customRule' in data) || data.customRule is string);
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['userId', 'title', 'amount', 'dueDate', 'status']) &&
+             data.userId == request.auth.uid &&
+             data.amount is number &&
+             data.status in ['pending', 'automatic', 'paid'] &&
+             (!('reminderTime' in data) || data.reminderTime is string);
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      
+      match /transactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTransaction(request.resource.data);
+        allow update: if isOwner(userId) && isValidTransaction(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /payments/{paymentId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPayment(request.resource.data);
+        allow update: if isOwner(userId) && isValidPayment(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
