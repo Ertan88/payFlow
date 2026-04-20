@@ -47,7 +47,11 @@ import {
   User as UserIcon,
   Settings,
   Clock,
-  Edit2
+  Edit2,
+  Landmark,
+  Receipt,
+  Banknote,
+  Coins
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { 
@@ -120,15 +124,18 @@ interface Payment {
 }
 
 const CATEGORY_ICONS: Record<string, any> = {
-  'Market': ShoppingBasket,
+  'Market': ShoppingBag,
   'Kira': Building2,
   'Maaş': Wallet,
   'Ulaşım': Fuel,
   'Yemek': Utensils,
   'Alışveriş': ShoppingBag,
+  'Kredi': Landmark,
+  'Kredi Kartı': CreditCard,
+  'Fatura': Receipt,
+  'Diğer': HelpCircle,
+  'Ek Gelir': Coins,
   'Sabit Gider': ReceiptText,
-  'Fatura': Zap,
-  'Keyif': Utensils,
   'Elektrik': Zap,
   'Su': Droplets,
   'Doğalgaz': Flame,
@@ -138,14 +145,50 @@ const CATEGORY_ICONS: Record<string, any> = {
   'Aidat': Building2,
 };
 
+const BANK_OPTIONS = [
+  'Ziraat Bankası',
+  'İş Bankası',
+  'Garanti BBVA',
+  'Yapı Kredi',
+  'Akbank',
+  'QNB Finansbank',
+  'DenizBank',
+  'VakıfBank',
+  'Halkbank',
+  'TEB',
+  'ING',
+  'Enpara',
+  'Diğer'
+];
+
 const BILL_SUB_CATEGORIES = [
-  { id: 'Elektrik', label: 'Elektrik', icon: Zap },
-  { id: 'Su', label: 'Su', icon: Droplets },
-  { id: 'Doğalgaz', label: 'Doğalgaz', icon: Flame },
-  { id: 'İnternet', label: 'İnternet', icon: Wifi },
-  { id: 'Telefon', label: 'Telefon', icon: Smartphone },
-  { id: 'TV/Yayın', label: 'TV/Yayın', icon: Tv },
-  { id: 'Aidat', label: 'Aidat', icon: Building2 },
+  { id: 'Elektrik', label: 'Elektrik', icon: Zap, color: 'text-amber-500' },
+  { id: 'Su', label: 'Su', icon: Droplets, color: 'text-blue-500' },
+  { id: 'Doğalgaz', label: 'Doğalgaz', icon: Flame, color: 'text-orange-600' },
+  { id: 'İnternet', label: 'İnternet', icon: Wifi, color: 'text-indigo-500' },
+  { id: 'Telefon', label: 'Telefon', icon: Smartphone, color: 'text-green-500' },
+  { id: 'TV/Yayın', label: 'TV/Yayın', icon: Tv, color: 'text-purple-500' },
+  { id: 'Aidat', label: 'Aidat', icon: Building2, color: 'text-rose-500' },
+];
+
+const INCOME_CATEGORIES = [
+  { id: 'inc-1', label: 'Maaş', icon: Wallet },
+  { id: 'inc-2', label: 'Ek Gelir', icon: Coins },
+  { id: 'inc-3', label: 'Satış', icon: ShoppingBag },
+  { id: 'inc-4', label: 'Bonus', icon: Banknote },
+  { id: 'inc-5', label: 'Diğer', icon: HelpCircle },
+];
+
+const EXPENSE_CATEGORIES = [
+  { id: 'exp-1', label: 'Fatura', icon: Receipt },
+  { id: 'exp-2', label: 'Kredi', icon: Landmark },
+  { id: 'exp-3', label: 'Kredi Kartı', icon: CreditCard },
+  { id: 'exp-4', label: 'Kira', icon: Building2 },
+  { id: 'exp-5', label: 'Market', icon: ShoppingBag },
+  { id: 'exp-6', label: 'Yemek', icon: Utensils },
+  { id: 'exp-7', label: 'Ulaşım', icon: Fuel },
+  { id: 'exp-8', label: 'Eğlence', icon: Flame },
+  { id: 'exp-9', label: 'Diğer', icon: HelpCircle },
 ];
 
 // --- Components ---
@@ -159,27 +202,32 @@ interface AppNotification {
 }
 
 const TopBar = ({ 
-  title, 
   user, 
   isDarkMode, 
   onToggleTheme, 
   onLogout, 
   notifications, 
-  onClearNotifications,
-  activeTab 
+  activeTab,
+  showMenu,
+  setShowMenu,
+  showNotifications,
+  setShowNotifications,
+  toggleMenu,
+  toggleNotifications,
 }: { 
-  title: string, 
   user: User | null, 
   isDarkMode: boolean, 
   onToggleTheme: () => void, 
   onLogout: () => void,
   notifications: AppNotification[],
-  onClearNotifications: () => void,
-  activeTab: Tab
+  activeTab: Tab,
+  showMenu: boolean,
+  setShowMenu: (v: boolean) => void,
+  showNotifications: boolean,
+  setShowNotifications: (v: boolean) => void,
+  toggleMenu: () => void,
+  toggleNotifications: () => void,
 }) => {
-  const [showMenu, setShowMenu] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-
   return (
     <header className="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
       <div className="flex justify-between items-center px-6 h-20 w-full max-w-7xl mx-auto">
@@ -205,7 +253,6 @@ const TopBar = ({
           {activeTab !== 'home' && (
             <div className="flex items-center gap-2">
               <div className="w-px h-6 bg-outline-variant/50 ml-2"></div>
-              <span className="font-headline font-extrabold text-primary text-xl tracking-tight uppercase">{title}</span>
             </div>
           )}
         </div>
@@ -213,7 +260,7 @@ const TopBar = ({
         <div className="flex items-center gap-2">
           <div className="relative">
             <button 
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={toggleNotifications}
               className="p-2.5 rounded-full bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50 relative"
             >
               <Bell className="w-5 h-5 text-primary" strokeWidth={2} />
@@ -221,113 +268,15 @@ const TopBar = ({
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface animate-pulse"></span>
               )}
             </button>
-
-            <AnimatePresence>
-              {showNotifications && (
-                <>
-                  <div 
-                    fixed="true" 
-                    className="fixed inset-0 z-40 bg-black/5" 
-                    onClick={() => setShowNotifications(false)} 
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-3 w-80 bg-surface border border-outline-variant shadow-2xl rounded-3xl overflow-hidden z-50 ring-1 ring-black/5"
-                  >
-                    <div className="p-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
-                      <h3 className="text-xs font-bold uppercase tracking-widest text-primary">Bildirimler</h3>
-                      {notifications.length > 0 && (
-                        <button onClick={onClearNotifications} className="text-[10px] font-bold text-error uppercase hover:underline">Temizle</button>
-                      )}
-                    </div>
-                    <div className="max-h-96 overflow-y-auto no-scrollbar">
-                      {notifications.length === 0 ? (
-                        <div className="p-8 text-center bg-surface">
-                          <Bell className="w-10 h-10 text-outline-variant mx-auto mb-3 opacity-20" />
-                          <p className="text-xs font-medium text-on-surface-variant">Yeni bildirim yok</p>
-                        </div>
-                      ) : (
-                        notifications.map(n => (
-                          <div key={n.id} className="p-4 border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors bg-surface">
-                            <p className="text-xs font-bold text-primary mb-1">{n.title}</p>
-                            <p className="text-[11px] text-on-surface-variant leading-relaxed mb-2 font-medium">{n.message}</p>
-                            <p className="text-[9px] font-bold text-outline opacity-60 uppercase">{n.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
           </div>
 
           <div className="relative">
             <button 
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={toggleMenu}
               className="p-2.5 rounded-full bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50"
             >
               <Settings className="w-5 h-5 text-primary" strokeWidth={2} />
             </button>
-
-            <AnimatePresence>
-              {showMenu && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute right-0 mt-3 w-64 bg-surface border border-outline-variant shadow-2xl rounded-3xl overflow-hidden z-50 p-2"
-                >
-                  <div className="p-3 mb-2 flex items-center gap-3 bg-surface-container-low rounded-2xl">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-headline font-bold">
-                      {user?.displayName?.charAt(0) || 'K'}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-primary">{user?.displayName || 'Kullanıcı'}</p>
-                      <p className="text-[10px] text-on-surface-variant font-medium">{user?.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-surface-container-low transition-colors text-sm font-bold text-on-surface">
-                      <UserIcon className="w-4 h-4" /> Hesap Bilgileri
-                    </button>
-                    <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-surface-container-low transition-colors text-sm font-bold text-on-surface">
-                      <Settings className="w-4 h-4" /> Genel Ayarlar
-                    </button>
-                    <button 
-                      onClick={onToggleTheme}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-container-low transition-colors text-sm font-bold text-on-surface"
-                    >
-                      <div className="flex items-center gap-3">
-                        {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                        {isDarkMode ? 'Aydınlık Mod' : 'Karanlık Mod'}
-                      </div>
-                      <div className={cn(
-                        "w-10 h-5 rounded-full relative transition-colors",
-                        isDarkMode ? "bg-primary" : "bg-outline-variant"
-                      )}>
-                        <div className={cn(
-                          "absolute top-1 w-3 h-3 rounded-full transition-all",
-                          isDarkMode ? "left-6 bg-surface" : "left-1 bg-white"
-                        )} />
-                      </div>
-                    </button>
-                  </div>
-
-                  <div className="border-t border-outline-variant/30 mt-2 pt-2">
-                    <button 
-                      onClick={onLogout}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-error/10 transition-colors text-sm font-bold text-error"
-                    >
-                      <LogOut className="w-4 h-4" /> Güvenli Çıkış
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -337,7 +286,7 @@ const TopBar = ({
 
 const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (tab: Tab) => void }) => {
   const tabs = [
-    { id: 'home', label: 'Ana Sayfa', icon: LayoutGrid },
+    { id: 'home', label: 'Anasayfa', icon: LayoutGrid },
     { id: 'transactions', label: 'İşlemler', icon: ReceiptText },
     { id: 'add', label: 'Ekle', icon: Plus, isCenter: true },
     { id: 'payments', label: 'Ödemeler', icon: CreditCard },
@@ -345,8 +294,8 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
   ];
 
   return (
-    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md">
-      <div className="bg-surface/90 backdrop-blur-xl rounded-full p-2 flex items-center justify-between shadow-xl border border-outline-variant/50">
+    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md">
+      <div className="bg-surface/90 backdrop-blur-xl rounded-2xl p-1.5 flex items-center justify-between shadow-2xl border border-outline-variant/30">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -358,15 +307,15 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
               className={cn(
                 "relative flex flex-col items-center justify-center transition-all duration-300",
                 tab.isCenter 
-                  ? "w-14 h-14 -mt-8 bg-primary text-surface rounded-full shadow-lg hover:scale-105 active:scale-95 z-10 border-4 border-surface" 
-                  : "flex-1 py-2 px-1 rounded-full",
-                !tab.isCenter && isActive ? "text-primary" : "text-on-surface-variant hover:text-primary hover:bg-outline-variant/30"
+                  ? "w-12 h-12 -mt-10 bg-primary text-surface rounded-xl shadow-lg hover:scale-105 active:scale-95 z-10 border-4 border-surface" 
+                  : "flex-1 py-1.5 px-0.5 rounded-xl",
+                !tab.isCenter && isActive ? "text-primary" : "text-on-surface-variant hover:text-primary"
               )}
             >
               {isActive && !tab.isCenter && (
                 <motion.div 
-                  layoutId="activeTab"
-                  className="absolute inset-0 bg-primary/5 rounded-full -z-10"
+                  layoutId="activeTabUnderline"
+                  className="absolute bottom-0 w-1 h-1 bg-primary rounded-full"
                   transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                 />
               )}
@@ -374,14 +323,14 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
                 strokeWidth={isActive || tab.isCenter ? 2.5 : 2}
                 className={cn(
                   "transition-all duration-300",
-                  tab.isCenter ? "w-7 h-7" : "w-5 h-5 mb-1",
-                  isActive && !tab.isCenter ? "scale-110" : ""
+                  tab.isCenter ? "w-6 h-6" : "w-4 h-4 mb-0.5",
+                  isActive && !tab.isCenter ? "scale-110" : "opacity-70"
                 )} 
               />
               {!tab.isCenter && (
                 <span className={cn(
-                  "text-[9px] font-bold uppercase tracking-wider transition-all",
-                  isActive ? "opacity-100" : "opacity-60"
+                  "text-[7px] font-bold uppercase tracking-widest transition-all whitespace-nowrap",
+                  isActive ? "opacity-100" : "opacity-50"
                 )}>
                   {tab.label}
                 </span>
@@ -442,80 +391,260 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
     return actualExpense + pendingPaymentsInMonth;
   }, [currentMonthTransactions, payments, today]);
 
+  const [chartFilter, setChartFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+
+  const pieData = useMemo(() => {
+    const categories: Record<string, { name: string, value: number, color: string, count: number }> = {};
+    
+    // Filter pending payments for the current month
+    const pendingPaymentsInMonth = payments.filter(p => {
+      if (p.status === 'paid') return false;
+      const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+      return pDate.getMonth() === today.getMonth() && pDate.getFullYear() === today.getFullYear();
+    });
+
+    if (chartFilter === 'all') {
+      const incomeTotal = currentMonthTransactions.filter(tx => tx.type === 'income').reduce((acc, tx) => acc + tx.amount, 0);
+      
+      const expenseTotalTransactions = Math.abs(currentMonthTransactions.filter(tx => tx.type === 'expense').reduce((acc, tx) => acc + tx.amount, 0));
+      const expenseTotalPayments = pendingPaymentsInMonth.reduce((acc, p) => acc + p.amount, 0);
+      const expenseTotal = expenseTotalTransactions + expenseTotalPayments;
+      
+      const countIncome = currentMonthTransactions.filter(tx => tx.type === 'income').length;
+      const countExpense = currentMonthTransactions.filter(tx => tx.type === 'expense').length + pendingPaymentsInMonth.length;
+      
+      return [
+        { name: 'Gelirler', value: incomeTotal, color: '#10B981', count: countIncome },
+        { name: 'Giderler', value: expenseTotal, color: '#F43F5E', count: countExpense }
+      ].filter(d => d.value > 0);
+    }
+
+    currentMonthTransactions.forEach(tx => {
+      if (tx.type !== chartFilter) return;
+      
+      const key = tx.category;
+      if (!categories[key]) {
+        categories[key] = { 
+          name: key, 
+          value: 0, 
+          color: '', 
+          count: 0 
+        };
+      }
+      categories[key].value += Math.abs(tx.amount);
+      categories[key].count += 1;
+    });
+
+    // Add pending payments to the distribution if not filtering for income
+    if (chartFilter !== 'income') {
+      pendingPaymentsInMonth.forEach(payment => {
+        const key = payment.category || 'Ödeme';
+        if (!categories[key]) {
+          categories[key] = { 
+            name: key, 
+            value: 0, 
+            color: '', 
+            count: 0 
+          };
+        }
+        categories[key].value += payment.amount;
+        categories[key].count += 1;
+      });
+    }
+
+    const palette = [
+      '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', 
+      '#8b5cf6', '#f43f5e', '#06b6d4', '#eab308'
+    ];
+    
+    return Object.values(categories)
+      .sort((a, b) => b.value - a.value)
+      .map((cat, i) => ({
+        ...cat,
+        color: chartFilter === 'income' ? '#10B981' : palette[i % palette.length]
+      }));
+  }, [currentMonthTransactions, payments, chartFilter, today]);
+
+  const totalValue = pieData.reduce((acc, curr) => acc + curr.value, 0);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="space-y-8"
+      className="space-y-6 sm:space-y-8"
     >
       {/* Hero Card */}
-      <section className="relative wealth-gradient rounded-3xl p-10 text-white overflow-hidden shadow-2xl border border-white/10">
+      <section className="relative wealth-gradient rounded-3xl p-5 sm:p-8 text-white overflow-hidden shadow-2xl border border-white/10">
         <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
         <div className="relative z-10">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="flex items-center gap-2 opacity-80">
-              <Wallet className="w-4 h-4" />
+              <Wallet className="w-3.5 h-3.5" />
               <p className="text-[10px] font-bold tracking-widest uppercase">Toplam Bakiye</p>
             </div>
-            <div className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-[10px] font-bold uppercase tracking-wider">
+            <div className="px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-[9px] font-bold uppercase tracking-wider">
               {today.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
             </div>
           </div>
-          <h1 className="text-5xl font-headline font-extrabold tracking-tighter mb-8 flex items-baseline gap-1">
-            <span className="text-2xl opacity-60 font-medium">₺</span>
-            <span className="data-value">{totalBalance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+          <h1 className="text-3xl sm:text-4xl font-headline font-extrabold tracking-tighter mb-4 sm:mb-6 flex items-baseline gap-1 overflow-hidden">
+            <span className="text-base sm:text-xl opacity-60 font-medium">₺</span>
+            <span className="data-value truncate">{totalBalance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
           </h1>
           
-          <div className="grid grid-cols-2 gap-4 pt-8 border-t border-white/20">
-            <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4 pt-4 sm:pt-6 border-t border-white/20">
+            <div className="space-y-2">
               <div className="flex items-center gap-2 opacity-70">
-                <div className="w-6 h-6 rounded-full bg-tertiary/20 flex items-center justify-center text-white">
-                  <ArrowUp className="w-3.5 h-3.5" strokeWidth={3} />
+                <div className="w-5 h-5 rounded-full bg-tertiary/20 flex items-center justify-center text-white shrink-0">
+                  <ArrowUp className="w-3 h-3" strokeWidth={3} />
                 </div>
-                <p className="text-[10px] font-bold uppercase tracking-widest">Gelir</p>
+                <p className="text-[9px] font-bold uppercase tracking-widest truncate">Gelir</p>
               </div>
-              <p className="font-headline font-bold text-xl leading-none whitespace-nowrap">₺{monthlyIncome.toLocaleString('tr-TR')}</p>
+              <p className="font-headline font-bold text-base sm:text-lg leading-none truncate">₺{monthlyIncome.toLocaleString('tr-TR')}</p>
             </div>
             
-            <div className="space-y-3 border-l border-white/10 pl-6">
+            <div className="space-y-2 border-l border-white/10 pl-5">
               <div className="flex items-center gap-2 opacity-70">
-                <div className="w-6 h-6 rounded-full bg-error/20 flex items-center justify-center text-white">
-                  <ArrowDown className="w-3.5 h-3.5" strokeWidth={3} />
+                <div className="w-5 h-5 rounded-full bg-error/20 flex items-center justify-center text-white shrink-0">
+                  <ArrowDown className="w-3 h-3" strokeWidth={3} />
                 </div>
-                <p className="text-[10px] font-bold uppercase tracking-widest">Gider</p>
+                <p className="text-[9px] font-bold uppercase tracking-widest truncate">Gider</p>
               </div>
-              <p className="font-headline font-bold text-xl leading-none whitespace-nowrap">₺{monthlyExpense.toLocaleString('tr-TR')}</p>
+              <p className="font-headline font-bold text-base sm:text-lg leading-none truncate">₺{monthlyExpense.toLocaleString('tr-TR')}</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Stats Bento */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-surface-container-low p-6 rounded-2xl flex items-center justify-between shadow-sm border border-outline-variant/50">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Aylık Gelir</p>
-            <h3 className="text-2xl font-bold font-headline text-tertiary data-value">
-              ₺{monthlyIncome.toLocaleString('tr-TR')}
-            </h3>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-tertiary/10 flex items-center justify-center text-tertiary shadow-sm">
-            <ArrowDown className="w-6 h-6" />
+      {/* Analytics Chart Section */}
+      <section className="space-y-3 sm:space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-lg font-bold font-headline tracking-tight leading-tight max-w-[200px]">Gelir Gider Analizi</h2>
+          
+          <div className="relative">
+            <button 
+              onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low border border-outline-variant/50 rounded-xl text-[10px] font-bold uppercase tracking-widest text-primary hover:bg-outline-variant/20 transition-all shadow-sm z-10"
+            >
+              <Filter className="w-2.5 h-2.5" />
+              {chartFilter === 'all' ? 'Tümü' : chartFilter === 'income' ? 'Gelirler' : 'Giderler'}
+            </button>
+
+            <AnimatePresence>
+              {showFilterDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowFilterDropdown(false)} />
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-40 bg-surface border border-outline-variant/50 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                  >
+                    <div className="p-1">
+                      {[
+                        { id: 'all', label: 'Tümü', icon: BarChart3 },
+                        { id: 'income', label: 'Gelirler', icon: ArrowUp, color: 'text-tertiary' },
+                        { id: 'expense', label: 'Giderler', icon: ArrowDown, color: 'text-error' }
+                      ].map((option) => (
+                        <button
+                          key={option.id}
+                          onClick={() => {
+                            setChartFilter(option.id as any);
+                            setShowFilterDropdown(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors",
+                            chartFilter === option.id ? "bg-primary/10 text-primary" : "hover:bg-surface-container-low text-on-surface-variant"
+                          )}
+                        >
+                          <option.icon className={cn("w-4 h-4", option.color || "text-primary")} />
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         </div>
-        <div className="bg-surface-container-low p-6 rounded-2xl flex items-center justify-between shadow-sm border border-outline-variant/50">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Aylık Gider</p>
-            <h3 className="text-2xl font-bold font-headline text-error data-value">
-              ₺{monthlyExpense.toLocaleString('tr-TR')}
-            </h3>
+
+        <div className="bg-surface-container-low rounded-3xl p-3 sm:p-5 border border-outline-variant/50 shadow-sm flex flex-row items-center gap-2 sm:gap-6">
+          <div className="w-[120px] h-[120px] sm:w-[150px] sm:h-[150px] shrink-0 relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <RePieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="65%"
+                  outerRadius="85%"
+                  paddingAngle={4}
+                  dataKey="value"
+                  animationBegin={0}
+                  animationDuration={800}
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'rgba(var(--surface), 0.95)', 
+                    borderRadius: '12px', 
+                    border: '1px solid rgba(var(--outline-variant), 0.5)',
+                    boxShadow: 'var(--shadow-xl)',
+                    fontSize: '10px',
+                    fontWeight: 'bold',
+                    padding: '8px'
+                  }}
+                />
+              </RePieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 z-10 overflow-hidden">
+              <p className="text-[7px] sm:text-[8px] font-bold text-outline uppercase tracking-widest leading-none mb-0.5">Toplam</p>
+              <p className="text-[9px] sm:text-[11px] font-bold font-headline text-primary w-full text-center truncate">
+                ₺{totalValue >= 10000 ? new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(totalValue) : totalValue.toLocaleString('tr-TR')}
+              </p>
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center text-error shadow-sm">
-            <ArrowUp className="w-6 h-6" />
+
+          <div className="flex-1 flex flex-col gap-1 overflow-y-auto no-scrollbar h-[110px] sm:h-[140px] pr-1">
+            {pieData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full opacity-40">
+                <PieChartIcon className="w-5 h-5 mb-1" />
+                <p className="text-[9px] font-bold uppercase tracking-widest text-center">Veri Yok</p>
+              </div>
+            ) : (
+              pieData.map((item, i) => (
+                <motion.div 
+                  key={item.name}
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-surface border border-outline-variant/10 hover:border-outline-variant/30 transition-all group"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                    <div 
+                      className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0" 
+                      style={{ backgroundColor: item.color }} 
+                    />
+                    <span className="text-[9px] sm:text-[10px] font-bold text-on-surface uppercase tracking-tight truncate">
+                      {item.name}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[9px] sm:text-[10px] font-bold text-primary">
+                      ₺{item.value >= 10000 ? new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(item.value) : item.value.toLocaleString('tr-TR')}
+                    </p>
+                  </div>
+                </motion.div>
+              ))
+            )}
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Recent Transactions */}
       <section className="space-y-4">
@@ -713,7 +842,7 @@ const TransactionsScreen = ({ user, transactions }: { user: User, transactions: 
           </button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {['Tümü', 'Market', 'Yemek', 'Ulaşım', 'Gelir'].map((filter) => (
+          {['Tümü', 'Fatura', 'Kredi', 'Kredi Kartı', 'Kira', 'Market', 'Yemek', 'Gelir'].map((filter) => (
             <button 
               key={filter}
               onClick={() => setActiveFilter(filter)}
@@ -888,41 +1017,61 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="space-y-10"
+      className="space-y-6 sm:space-y-10"
     >
       {/* Type Toggle */}
-      <div className="bg-surface-container-low p-1.5 rounded-full flex border border-outline-variant/30">
+      <div className="bg-surface-container-low p-1.5 rounded-2xl flex items-center gap-1 border border-outline-variant/30 relative">
         <button 
-          onClick={() => setType('expense')}
+          onClick={() => {
+            setType('expense');
+            setCategory(EXPENSE_CATEGORIES[0].label);
+          }}
           className={cn(
-            "flex-1 py-3 px-6 rounded-full font-headline font-bold text-sm transition-all duration-300",
-            type === 'expense' ? "bg-primary text-surface shadow-lg" : "text-on-surface-variant hover:text-primary"
+            "relative z-10 flex-1 py-3 sm:py-4 px-6 rounded-xl font-headline font-bold text-sm transition-all duration-500",
+            type === 'expense' ? "text-surface" : "text-on-surface-variant hover:text-primary"
           )}
         >
-          Gider
+          {type === 'expense' && (
+            <motion.div 
+              layoutId="typeToggle"
+              className="absolute inset-0 bg-error rounded-xl shadow-lg shadow-error/20"
+              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+            />
+          )}
+          <span className="relative z-10">Gider</span>
         </button>
         <button 
-          onClick={() => setType('income')}
+          onClick={() => {
+            setType('income');
+            setCategory(INCOME_CATEGORIES[0].label);
+          }}
           className={cn(
-            "flex-1 py-3 px-6 rounded-full font-headline font-bold text-sm transition-all duration-300",
-            type === 'income' ? "bg-primary text-surface shadow-lg" : "text-on-surface-variant hover:text-primary"
+            "relative z-10 flex-1 py-3 sm:py-4 px-6 rounded-xl font-headline font-bold text-sm transition-all duration-500",
+            type === 'income' ? "text-surface" : "text-on-surface-variant hover:text-primary"
           )}
         >
-          Gelir
+          {type === 'income' && (
+            <motion.div 
+              layoutId="typeToggle"
+              className="absolute inset-0 bg-tertiary rounded-xl shadow-lg shadow-tertiary/20"
+              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+            />
+          )}
+          <span className="relative z-10">Gelir</span>
         </button>
       </div>
 
       {/* Amount Input */}
-      <div className="text-center">
+      <div className="text-center py-2">
         <label className="block text-[10px] font-bold tracking-widest text-on-surface-variant uppercase mb-4">TUTAR GİRİN</label>
         <div className="flex items-center justify-center gap-2">
-          <span className="font-headline text-4xl font-bold text-primary">₺</span>
+          <span className="font-headline text-3xl sm:text-4xl font-bold text-primary">₺</span>
           <input 
             type="number" 
             placeholder="0,00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full max-w-[280px] bg-transparent border-none text-center font-headline text-6xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
+            className="w-full max-w-[280px] bg-transparent border-none text-center font-headline text-5xl sm:text-6xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
           />
         </div>
         {amount && Number(amount) > 1000 && type === 'expense' && (
@@ -941,16 +1090,10 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
       <div className="grid grid-cols-1 gap-4">
         <div className="bg-surface-container-low rounded-3xl p-6 border border-outline-variant/50">
           <h3 className="text-[10px] font-bold text-on-surface-variant mb-4 flex items-center gap-2 uppercase tracking-wider">
-            <ShoppingBasket className="w-4 h-4" /> KATEGORİ
+            <ShoppingBag className="w-4 h-4" /> KATEGORİ
           </h3>
           <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-            {[
-              { id: '1', label: 'Market', icon: ShoppingBasket },
-              { id: '2', label: 'Kira', icon: Building2 },
-              { id: '3', label: 'Maaş', icon: Wallet },
-              { id: '4', label: 'Ulaşım', icon: Fuel },
-              { id: '5', label: 'Yemek', icon: Utensils },
-            ].map(cat => (
+            {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => (
               <div 
                 key={cat.id} 
                 onClick={() => setCategory(cat.label)}
@@ -974,13 +1117,29 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
           <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 flex items-center gap-2 uppercase tracking-wider">
             <ReceiptText className="w-4 h-4" /> İŞLEM BAŞLIĞI
           </h3>
-          <input 
-            type="text" 
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Örn: Market Alışverişi"
-            className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
-          />
+          <div className="space-y-3">
+            <input 
+              type="text" 
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={(category === 'Kredi' || category === 'Kredi Kartı') ? "Banka veya kart adı girin..." : "Örn: Market Alışverişi"}
+              className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
+            />
+            
+            {(category === 'Kredi' || category === 'Kredi Kartı') && (
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                {BANK_OPTIONS.map(bank => (
+                  <button
+                    key={bank}
+                    onClick={() => setTitle(`${bank} ${category}`)}
+                    className="whitespace-nowrap px-3 py-1.5 rounded-full bg-surface-container-lowest text-[10px] font-bold text-primary border border-outline-variant/30 hover:bg-primary hover:text-surface transition-all"
+                  >
+                    {bank}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="bg-surface-container-low rounded-[1.5rem] p-6 space-y-4">
@@ -1255,11 +1414,37 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
               className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm"
             >
               <option value="Fatura">Fatura</option>
+              <option value="Kredi">Kredi Ödemesi</option>
+              <option value="Kredi Kartı">Kredi Kartı Borcu</option>
               <option value="Kira">Kira</option>
               <option value="Abonelik">Abonelik</option>
               <option value="Market">Market</option>
               <option value="Diğer">Diğer</option>
             </select>
+            
+            {(category === 'Kredi' || category === 'Kredi Kartı') && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex gap-2 overflow-x-auto no-scrollbar py-1"
+              >
+                {BANK_OPTIONS.map(bank => (
+                  <button
+                    key={bank}
+                    onClick={() => {
+                      setTitle(`${bank} ${category}`);
+                      setSubCategory(bank);
+                    }}
+                    className={cn(
+                      "whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border",
+                      subCategory === bank ? "bg-primary text-surface border-primary" : "bg-surface-container-lowest text-primary border-outline-variant/30"
+                    )}
+                  >
+                    {bank}
+                  </button>
+                ))}
+              </motion.div>
+            )}
             
             {category === 'Fatura' && (
               <motion.select 
@@ -1327,6 +1512,7 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
   const [reminderBillId, setReminderBillId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
 
   const currentMonth = currentDate.getMonth();
@@ -1352,8 +1538,27 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
   ];
 
+  const filteredPayments = useMemo(() => {
+    let filtered = [...payments];
+    
+    if (selectedDate) {
+      filtered = filtered.filter(p => {
+        const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate().toISOString().split('T')[0] : p.dueDate;
+        return pDate === selectedDate;
+      });
+    } else {
+      // If no day selected, maybe show all pending for the current month
+      filtered = filtered.filter(p => {
+        const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+        return pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear;
+      });
+    }
+
+    return filtered;
+  }, [payments, selectedDate, currentMonth, currentYear]);
+
   const groupedPayments = useMemo(() => {
-    return payments.reduce((acc, bill) => {
+    return filteredPayments.reduce((acc, bill) => {
       const cat = bill.category || 'Diğer';
       if (!acc[cat]) acc[cat] = [];
       acc[cat].push(bill);
@@ -1446,7 +1651,9 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
   ];
 
   const renderBillCard = (bill: Payment) => {
-    const Icon = CATEGORY_ICONS[bill.category] || Zap;
+    const subCat = BILL_SUB_CATEGORIES.find(s => s.label === bill.title || bill.title.toLowerCase().includes(s.label.toLowerCase()));
+    const Icon = CATEGORY_ICONS[bill.category] || (subCat ? subCat.icon : Zap);
+    const iconColor = subCat ? subCat.color : "text-primary";
     const isEditingReminder = reminderBillId === bill.id;
     const currentReminders = bill.reminders || (bill.reminderTime && bill.reminderTime !== 'none' ? [bill.reminderTime] : []);
 
@@ -1469,30 +1676,44 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
       }
     };
 
+    const formatDate = (dateStr: string) => {
+      try {
+        const [year, month, day] = dateStr.split('-');
+        return `${day}/${month}/${year}`;
+      } catch (e) {
+        return dateStr;
+      }
+    };
+
     return (
       <motion.div 
         key={bill.id}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-surface-container-low p-6 rounded-3xl flex flex-col gap-5 group hover:shadow-lg transition-all shadow-sm relative overflow-hidden border border-outline-variant/50"
+        className="bg-surface-container-low p-4 sm:p-5 rounded-3xl flex flex-col gap-4 sm:gap-5 group hover:shadow-lg transition-all shadow-sm relative overflow-hidden border border-outline-variant/50"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-sm border border-primary/5 group-hover:scale-110 transition-transform">
-              <Icon className="w-7 h-7" strokeWidth={2.5} />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className={cn(
+              "w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm border group-hover:scale-105 transition-transform",
+              subCat ? `bg-current/10 border-current/5 ${iconColor}` : "bg-primary/10 border-primary/5 text-primary"
+            )}>
+              <Icon className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
             </div>
-            <div>
-              <h4 className="font-bold text-on-surface text-base">{bill.title}</h4>
-              <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest opacity-60">Son Gün: {bill.dueDate} {bill.dueTime && `• ${bill.dueTime}`}</p>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-bold text-on-surface text-sm sm:text-base truncate">{bill.title}</h4>
+              <p className="text-[9px] sm:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest opacity-60 truncate">
+                Son Gün: {formatDate(bill.dueDate)}
+              </p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="font-headline font-extrabold text-xl text-primary data-value">₺{bill.amount.toLocaleString('tr-TR')}</p>
+          <div className="text-right shrink-0">
+            <p className="font-headline font-extrabold text-base sm:text-lg text-primary data-value">₺{bill.amount.toLocaleString('tr-TR')}</p>
             <div className="flex flex-col items-end gap-1">
               <span className={cn(
-                "text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-md",
+                "text-[8px] sm:text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-md",
                 bill.status === 'pending' ? "bg-error/10 text-error" : 
-                bill.status === 'paid' ? "bg-on-tertiary-container/10 text-on-tertiary-container" : "bg-on-tertiary-container/10 text-on-tertiary-container"
+                bill.status === 'paid' ? "bg-tertiary/10 text-tertiary" : "bg-primary/10 text-primary"
               )}>
                 {bill.status === 'pending' ? 'BEKLİYOR' : 
                  bill.status === 'paid' ? 'ÖDENDİ' : 'OTOMATİK'}
@@ -1500,9 +1721,9 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
               {bill.status === 'pending' && (
                 <button 
                   onClick={() => handleMarkAsPaid(bill.id)}
-                  className="text-[10px] font-bold text-primary hover:underline uppercase tracking-tighter"
+                  className="text-[10px] font-extrabold text-tertiary hover:scale-105 transition-transform uppercase tracking-tighter"
                 >
-                  Öde
+                  ÖDE
                 </button>
               )}
             </div>
@@ -1510,22 +1731,22 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t border-outline-variant/10">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Bell className={cn("w-5 h-5 transition-all", currentReminders.length > 0 ? "text-primary fill-primary/20" : "text-outline opacity-40")} />
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+            <div className="relative shrink-0">
+              <Bell className={cn("w-4 h-4 sm:w-5 sm:h-5 transition-all", currentReminders.length > 0 ? "text-primary fill-primary/20" : "text-outline opacity-40")} />
               {currentReminders.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(0,23,54,0.5)]" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(0,23,54,0.5)]" />
               )}
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-0">
               <span className={cn(
-                "text-[10px] font-bold uppercase tracking-widest",
+                "text-[9px] sm:text-[10px] font-bold uppercase tracking-widest truncate",
                 currentReminders.length > 0 ? "text-primary" : "text-outline opacity-40"
               )}>
                 Hatırlatıcılar
               </span>
               <span className={cn(
-                "text-xs font-bold transition-all",
+                "text-[11px] sm:text-xs font-bold transition-all truncate",
                 currentReminders.length > 0 ? "text-primary" : "text-on-surface-variant opacity-40"
               )}>
                 {currentReminders.length > 0 
@@ -1534,23 +1755,23 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button 
               onClick={() => setEditingPayment(bill)}
-              className="p-2.5 text-outline hover:text-primary transition-colors rounded-xl hover:bg-primary/5"
+              className="p-2 text-outline hover:text-primary transition-colors rounded-lg sm:rounded-xl hover:bg-primary/5"
             >
-              <Search className="w-4.5 h-4.5" />
+              <Search className="w-4 h-4" />
             </button>
             <button 
               onClick={() => handleDeletePayment(bill.id)}
-              className="p-2.5 text-outline hover:text-error transition-colors rounded-xl hover:bg-error/5"
+              className="p-2 text-outline hover:text-error transition-colors rounded-lg sm:rounded-xl hover:bg-error/5"
             >
-              <Trash2 className="w-4.5 h-4.5" />
+              <Trash2 className="w-4 h-4" />
             </button>
             <button 
               onClick={() => setReminderBillId(isEditingReminder ? null : bill.id)}
               className={cn(
-                "px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm",
+                "px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold transition-all shadow-sm",
                 isEditingReminder ? "bg-surface-container-high text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
               )}
             >
@@ -1721,33 +1942,33 @@ const EditPaymentModal = ({ payment, onSave, onClose }: any) => {
       </section>
 
       {/* Calendar & Bills */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-surface-container-low rounded-3xl p-6 space-y-6 border border-outline-variant/50">
-          <div className="flex justify-between items-center">
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="bg-surface-container-low rounded-3xl p-6 lg:w-[380px] shrink-0 border border-outline-variant/50 h-fit">
+          <div className="flex justify-between items-center mb-6">
             <h3 className="font-headline text-lg font-bold text-primary">Ödeme Takvimi</h3>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button 
                 onClick={prevMonth}
-                className="p-1 hover:bg-surface-container-high rounded-full transition-colors"
+                className="p-1.5 hover:bg-surface-container-high rounded-full transition-colors"
               >
-                <ChevronLeft className="w-5 h-5 text-outline" />
+                <ChevronLeft className="w-4 h-4 text-outline" />
               </button>
-              <span className="text-sm font-bold min-w-[100px] text-center">
+              <span className="text-xs font-bold min-w-[80px] text-center">
                 {monthLabels[currentMonth]} {currentYear}
               </span>
               <button 
                 onClick={nextMonth}
-                className="p-1 hover:bg-surface-container-high rounded-full transition-colors"
+                className="p-1.5 hover:bg-surface-container-high rounded-full transition-colors"
               >
-                <ChevronRight className="w-5 h-5 text-outline" />
+                <ChevronRight className="w-4 h-4 text-outline" />
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-outline uppercase tracking-wider">
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-outline uppercase tracking-wider mb-2">
             {['Pz', 'Pt', 'Sa', 'Çr', 'Pş', 'Cu', 'Ct'].map(d => <div key={d}>{d}</div>)}
           </div>
-          <div className="grid grid-cols-7 gap-2">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={i} className="h-10"></div>)}
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={i} className="h-8 sm:h-10"></div>)}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = i + 1;
               const formattedDate = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
@@ -1757,33 +1978,46 @@ const EditPaymentModal = ({ payment, onSave, onClose }: any) => {
               });
               const today = new Date();
               const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
+              const isSelected = selectedDate === formattedDate;
 
               return (
                 <div 
                   key={day} 
+                  onClick={() => setSelectedDate(isSelected ? null : formattedDate)}
                   className={cn(
-                    "h-12 flex flex-col items-center justify-center rounded-xl text-sm font-bold transition-all relative border border-transparent",
-                    isToday ? "bg-primary text-surface shadow-md" : "hover:bg-surface-container-high bg-surface-container-lowest"
+                    "h-8 sm:h-10 flex flex-col items-center justify-center rounded-lg sm:rounded-xl text-xs font-bold transition-all relative border cursor-pointer",
+                    isSelected ? "bg-primary text-surface shadow-md border-primary" : 
+                    isToday ? "bg-primary/10 text-primary border-primary/20" : 
+                    "hover:bg-surface-container-high bg-surface-container-lowest border-transparent"
                   )}
                 >
-                  <span className={cn(isToday ? "text-surface" : "text-on-surface")}>{day}</span>
+                  <span className={cn(isSelected ? "text-surface" : isToday ? "text-primary" : "text-on-surface")}>{day}</span>
                   {dayPayments.length > 0 && (
-                    <div className="flex gap-0.5 mt-1">
+                    <div className="flex gap-0.5 mt-0.5">
                       {dayPayments.slice(0, 3).map((p, idx) => (
-                        <div key={idx} className={cn("w-1.5 h-1.5 rounded-full", isToday ? "bg-surface" : "bg-primary shadow-sm")}></div>
+                        <div key={idx} className={cn("w-1 h-1 rounded-full", isSelected ? "bg-surface" : "bg-primary shadow-sm")}></div>
                       ))}
-                      {dayPayments.length > 3 && <div className={cn("w-1 h-1 rounded-full", isToday ? "bg-surface" : "bg-primary shadow-sm")}></div>}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+          {selectedDate && (
+            <button 
+              onClick={() => setSelectedDate(null)}
+              className="w-full mt-4 py-2 text-[10px] font-bold text-primary uppercase tracking-widest hover:bg-primary/5 rounded-xl transition-all"
+            >
+              Filtreyi Temizle
+            </button>
+          )}
         </div>
 
-        <section className="space-y-4">
+        <section className="space-y-4 flex-1">
           <div className="flex justify-between items-center px-2">
-            <h3 className="font-headline text-xl font-bold text-primary">Yaklaşan Faturalar</h3>
+            <h3 className="font-headline text-lg font-bold text-primary">
+              {selectedDate ? `${new Date(selectedDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} Ödemeleri` : 'Yaklaşan Faturalar'}
+            </h3>
             <div className="bg-surface-container-low p-1 rounded-full flex gap-1">
               <button 
                 onClick={() => setViewMode('list')}
@@ -1809,7 +2043,7 @@ const EditPaymentModal = ({ payment, onSave, onClose }: any) => {
           <div className="space-y-6">
             {viewMode === 'list' ? (
               <div className="space-y-3">
-                {payments.map(bill => renderBillCard(bill))}
+                {filteredPayments.map(bill => renderBillCard(bill))}
               </div>
             ) : (
               (Object.entries(groupedPayments) as [string, Payment[]][]).map(([category, categoryBills]) => (
@@ -1825,9 +2059,9 @@ const EditPaymentModal = ({ payment, onSave, onClose }: any) => {
                 </div>
               ))
             )}
-            {payments.length === 0 && (
-              <div className="text-center py-10 bg-surface-container-lowest rounded-2xl shadow-sm">
-                <p className="text-on-surface-variant text-sm">Henüz fatura eklenmemiş.</p>
+            {filteredPayments.length === 0 && (
+              <div className="text-center py-10 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10">
+                <p className="text-on-surface-variant text-sm font-medium">Bu tarihte kayıtlı ödeme bulunmuyor.</p>
               </div>
             )}
           </div>
@@ -2316,6 +2550,18 @@ export default function App() {
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notifiedReminders, setNotifiedReminders] = useState<Set<string>>(new Set());
+  const [showMenu, setShowMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const toggleMenu = () => {
+    setShowMenu(!showMenu);
+    if (!showMenu) setShowNotifications(false);
+  };
+
+  const toggleNotifications = () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications) setShowMenu(false);
+  };
 
   const addNotification = (title: string, message: string) => {
     const newNote: AppNotification = {
@@ -2519,23 +2765,143 @@ export default function App() {
   return (
     <div className="min-h-screen pb-32 bg-surface transition-colors duration-300">
       <TopBar 
-        title={getTitle()} 
         user={user} 
         isDarkMode={isDarkMode} 
         onToggleTheme={() => setIsDarkMode(!isDarkMode)} 
         onLogout={logout}
         notifications={notifications}
-        onClearNotifications={() => setNotifications([])}
         activeTab={activeTab}
+        showMenu={showMenu}
+        setShowMenu={setShowMenu}
+        showNotifications={showNotifications}
+        setShowNotifications={setShowNotifications}
+        toggleMenu={toggleMenu}
+        toggleNotifications={toggleNotifications}
       />
       
-      <main className="pt-24 px-6 max-w-7xl mx-auto">
+      <main className="pt-20 px-4 sm:px-6 max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
           {renderScreen()}
         </AnimatePresence>
       </main>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Drawer Components rendered outside TopBar to fix positioning issues */}
+      <AnimatePresence>
+        {showNotifications && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" 
+              onClick={() => setShowNotifications(false)} 
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-surface border-t border-outline-variant shadow-2xl rounded-t-[32px] overflow-hidden z-[110] max-h-[85vh] flex flex-col"
+            >
+              <div className="w-12 h-1.5 bg-outline-variant/30 rounded-full mx-auto my-3 shrink-0" />
+              
+              <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-low">
+                <h3 className="text-sm font-bold uppercase tracking-widest text-primary">Bildirimler</h3>
+                {notifications.length > 0 && (
+                  <button onClick={() => setNotifications([])} className="text-xs font-bold text-error uppercase hover:underline">Tümünü Temizle</button>
+                )}
+              </div>
+              <div className="overflow-y-auto no-scrollbar pb-10">
+                {notifications.length === 0 ? (
+                  <div className="p-12 text-center bg-surface">
+                    <Bell className="w-12 h-12 text-outline-variant mx-auto mb-4 opacity-20" />
+                    <p className="text-sm font-medium text-on-surface-variant">Yeni bildirim bulunmuyor</p>
+                  </div>
+                ) : (
+                  notifications.map(n => (
+                    <div key={n.id} className="p-5 border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors bg-surface">
+                      <p className="text-sm font-bold text-primary mb-1">{n.title}</p>
+                      <p className="text-xs text-on-surface-variant leading-relaxed mb-2 font-medium">{n.message}</p>
+                      <p className="text-[10px] font-bold text-outline opacity-60 uppercase">{n.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMenu && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" 
+              onClick={() => setShowMenu(false)} 
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-surface border-t border-outline-variant shadow-2xl rounded-t-[32px] overflow-hidden z-[110] p-6 flex flex-col"
+            >
+              <div className="w-12 h-1.5 bg-outline-variant/30 rounded-full mx-auto mb-6 shrink-0" />
+
+              <div className="p-5 mb-6 flex items-center gap-4 bg-surface-container-low rounded-2xl border border-outline-variant/30">
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-headline font-bold text-xl border border-primary/20">
+                  {user?.displayName?.charAt(0) || 'K'}
+                </div>
+                <div>
+                  <p className="text-base font-bold text-primary">{user?.displayName || 'Kullanıcı'}</p>
+                  <p className="text-xs text-on-surface-variant font-medium">{user?.email}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-8">
+                <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-container-low transition-all text-sm font-bold text-on-surface border border-transparent hover:border-outline-variant/50">
+                  <UserIcon className="w-5 h-5 text-primary" /> Hesap Bilgileri
+                </button>
+                <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-container-low transition-all text-sm font-bold text-on-surface border border-transparent hover:border-outline-variant/50">
+                  <Settings className="w-5 h-5 text-primary" /> Genel Ayarlar
+                </button>
+                <button 
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-surface-container-low transition-all text-sm font-bold text-on-surface border border-transparent hover:border-outline-variant/50"
+                >
+                  <div className="flex items-center gap-4">
+                    {isDarkMode ? <Sun className="w-5 h-5 text-primary" /> : <Moon className="w-5 h-5 text-primary" />}
+                    {isDarkMode ? 'Aydınlık Mod' : 'Karanlık Mod'}
+                  </div>
+                  <div className={cn(
+                    "w-12 h-6 rounded-full relative transition-colors",
+                    isDarkMode ? "bg-primary" : "bg-outline-variant"
+                  )}>
+                    <div className={cn(
+                      "absolute top-1 w-4 h-4 rounded-full transition-all",
+                      isDarkMode ? "left-7 bg-surface" : "left-1 bg-white"
+                    )} />
+                  </div>
+                </button>
+              </div>
+
+              <div className="border-t border-outline-variant/30 pt-4 mb-10">
+                <button 
+                  onClick={logout}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-error/10 transition-all text-sm font-bold text-error border border-transparent hover:border-error/20"
+                >
+                  <LogOut className="w-5 h-5" /> Güvenli Çıkış
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
