@@ -96,7 +96,7 @@ import {
 } from './firebase';
 
 // --- Types ---
-type Tab = 'home' | 'transactions' | 'add' | 'payments' | 'reports';
+type Tab = 'home' | 'transactions' | 'add' | 'payments' | 'settings';
 
 interface Transaction {
   id: string;
@@ -539,15 +539,6 @@ const TopBar = ({
               )}
             </button>
           </div>
-
-          <div className="relative">
-            <button 
-              onClick={toggleMenu}
-              className="p-2 rounded-xl bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50"
-            >
-              <Settings className="w-4.5 h-4.5 text-primary" strokeWidth={2} />
-            </button>
-          </div>
         </div>
       </div>
     </header>
@@ -560,7 +551,7 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
     { id: 'transactions', label: 'Hareketler', icon: ReceiptText },
     { id: 'add', label: 'Ekle', icon: Plus, isCenter: true },
     { id: 'payments', label: 'Planlı', icon: CheckSquare },
-    { id: 'reports', label: 'Raporlar', icon: PieChartIcon },
+    { id: 'settings', label: 'Ayarlar', icon: Settings },
   ];
 
   return (
@@ -1966,7 +1957,9 @@ const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User
   const [amount, setAmount] = useState(editData?.amount?.toString() || '');
   const [title, setTitle] = useState(editData?.title || '');
   const [dueDate, setDueDate] = useState(editData?.dueDate || new Date().toISOString().split('T')[0]);
-  const [dueTime, setDueTime] = useState(editData?.dueTime || '09:00');
+  const [remindOnDue, setRemindOnDue] = useState(editData?.reminders?.includes('day_of') || false);
+  const [remindOneDayBefore, setRemindOneDayBefore] = useState(editData?.reminders?.includes('one_day_before') || false);
+  const [recurrence, setRecurrence] = useState<'none' | 'weekly' | 'monthly' | 'yearly'>('none');
   const [category, setCategory] = useState(editData?.category || 'Fatura');
   const [subCategory, setSubCategory] = useState(editData?.subCategory || '');
   const [description, setDescription] = useState(editData?.description || '');
@@ -1984,13 +1977,16 @@ const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User
         title,
         amount: Number(amount),
         dueDate,
-        dueTime,
+        reminders: [
+          ...(remindOnDue ? ['day_of'] : []),
+          ...(remindOneDayBefore ? ['one_day_before'] : [])
+        ],
         category,
         subCategory: subCategory || null,
         description,
+        recurrence,
         status: editData?.status || 'pending',
-        reminders: editData?.reminders || [],
-        isRecurring,
+        isRecurring: recurrence !== 'none',
         createdAt: editData?.createdAt || Timestamp.now()
       };
 
@@ -2039,7 +2035,7 @@ const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
-          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">KATEGORİ</h3>
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">KATEGORİ & TİP</h3>
           <div className="flex flex-col gap-3">
             <select 
               value={category}
@@ -2110,17 +2106,6 @@ const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User
         </div>
 
         <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
-          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">AÇIKLAMA</h3>
-          <textarea 
-            placeholder="Ödeme ile ilgili notlarınızı buraya yazabilirsiniz..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            className="w-full bg-surface-container-lowest rounded-xl border-none text-on-surface font-medium p-3 text-sm focus:ring-0 shadow-sm resize-none"
-          />
-        </div>
-
-        <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
           <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">SON ÖDEME TARİHİ</h3>
           <div 
             onClick={() => setShowDatePicker(true)}
@@ -2138,6 +2123,59 @@ const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User
             title="Son Ödeme Tarihi"
           />
         </div>
+
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">HATIRLATMALAR</h3>
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={() => setRemindOnDue(!remindOnDue)}
+              className="w-full flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/10"
+            >
+              <span className="text-sm font-bold text-on-surface">Son ödeme gününde hatırlat</span>
+              <div className={cn("w-10 h-5 rounded-full relative transition-colors", remindOnDue ? "bg-primary" : "bg-outline-variant")}>
+                <div className={cn("absolute top-1 w-3 h-3 rounded-full transition-all", remindOnDue ? "left-6 bg-surface" : "left-1 bg-white")} />
+              </div>
+            </button>
+            <button 
+              onClick={() => setRemindOneDayBefore(!remindOneDayBefore)}
+              className="w-full flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/10"
+            >
+              <span className="text-sm font-bold text-on-surface">1 gün önce hatırlat</span>
+              <div className={cn("w-10 h-5 rounded-full relative transition-colors", remindOneDayBefore ? "bg-primary" : "bg-outline-variant")}>
+                <div className={cn("absolute top-1 w-3 h-3 rounded-full transition-all", remindOneDayBefore ? "left-6 bg-surface" : "left-1 bg-white")} />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">TEKRARLAMA</h3>
+          <div className="grid grid-cols-4 gap-2">
+            {(['none', 'weekly', 'monthly', 'yearly'] as const).map(option => (
+              <button
+                key={option}
+                onClick={() => setRecurrence(option)}
+                className={cn(
+                  "py-2 rounded-xl text-[10px] font-bold transition-all border",
+                  recurrence === option ? "bg-primary text-surface border-primary" : "bg-surface-container-lowest text-primary border-outline-variant/30"
+                )}
+              >
+                {option === 'none' ? 'Yok' : option === 'weekly' ? 'Haftalık' : option === 'monthly' ? 'Aylık' : 'Yıllık'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">AÇIKLAMA</h3>
+          <textarea 
+            placeholder="Ödeme ile ilgili notlarınızı buraya yazabilirsiniz..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            className="w-full bg-surface-container-lowest rounded-xl border-none text-on-surface font-medium p-3 text-sm focus:ring-0 shadow-sm resize-none"
+          />
+        </div>
       </div>
 
       <button 
@@ -2151,412 +2189,98 @@ const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User
   );
 };
 
-type Period = 'weekly' | 'monthly' | 'yearly';
-
-const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: Transaction[], payments: Payment[], isDarkMode: boolean }) => {
-  const [period, setPeriod] = useState<Period>('monthly');
-  const [categoryFilter, setCategoryFilter] = useState<string>('Tümü');
-
-  const categories = useMemo(() => {
-    const cats = Array.from(new Set([...transactions.map(tx => tx.category), ...payments.map(p => p.category)]));
-    return ['Tümü', ...cats.sort()];
-  }, [transactions, payments]);
-
-  const filteredData = useMemo(() => {
-    const now = new Date();
-    now.setHours(23, 59, 59, 999);
-
-    const checkPeriod = (date: Date) => {
-      if (period === 'weekly') {
-        const weekAgo = new Date();
-        weekAgo.setDate(now.getDate() - 7);
-        return date >= weekAgo && date <= now;
-      } else if (period === 'monthly') {
-        const monthAgo = new Date();
-        monthAgo.setMonth(now.getMonth() - 1);
-        return date >= monthAgo && date <= now;
-      } else {
-        const yearAgo = new Date();
-        yearAgo.setFullYear(now.getFullYear() - 1);
-        return date >= yearAgo && date <= now;
-      }
-    };
-
-    const txs = transactions.filter(tx => {
-      const txDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
-      if (!checkPeriod(txDate)) return false;
-      if (categoryFilter !== 'Tümü' && tx.category !== categoryFilter) return false;
-      return true;
-    }).map(tx => ({ ...tx, isPlanned: false }));
-
-    const pays = payments.filter(p => {
-      if (p.status === 'paid') return false; // Already in transactions
-      const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
-      if (!checkPeriod(pDate)) return false;
-      if (categoryFilter !== 'Tümü' && p.category !== categoryFilter) return false;
-      return true;
-    }).map(p => ({
-      id: p.id,
-      title: p.title,
-      amount: -Math.abs(p.amount),
-      type: 'expense' as const,
-      category: p.category,
-      date: p.dueDate,
-      isPlanned: true
-    }));
-
-    return [...txs, ...pays].sort((a, b) => {
-      const dateA = a.date instanceof Timestamp ? a.date.toDate() : new Date(a.date);
-      const dateB = b.date instanceof Timestamp ? b.date.toDate() : new Date(b.date);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [transactions, payments, period, categoryFilter]);
-
-  const pieData = useMemo(() => {
-    const cats: Record<string, number> = {};
-    filteredData.filter(item => item.type === 'expense').forEach(item => {
-      cats[item.category] = (cats[item.category] || 0) + Math.abs(item.amount);
-    });
-    
-    const total = Object.values(cats).reduce((acc, v) => acc + v, 0);
-    const colors = isDarkMode 
-      ? ['#60A5FA', '#34D399', '#F87171', '#FBBC05', '#A78BFA'] // Brighter in dark
-      : ['#1E3A8A', '#059669', '#DC2626', '#EA580C', '#7C3AED'];
-    
-    return Object.entries(cats).map(([name, value], i) => ({
-      name,
-      value: total > 0 ? Math.round((value / total) * 100) : 0,
-      amount: value,
-      color: colors[i % colors.length]
-    })).sort((a, b) => b.amount - a.amount);
-  }, [filteredData, isDarkMode]);
-
-  const trendData = useMemo(() => {
-    const data: Record<string, { name: string, gelir: number, gider: number }> = {};
-    const now = new Date();
-
-    if (period === 'weekly') {
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        const label = d.toLocaleDateString('tr-TR', { weekday: 'short' });
-        data[d.toDateString()] = { name: label, gelir: 0, gider: 0 };
-      }
-      filteredData.forEach(item => {
-        const d = item.date instanceof Timestamp ? item.date.toDate() : new Date(item.date);
-        const key = d.toDateString();
-        if (data[key]) {
-          if (item.type === 'income') data[key].gelir += item.amount;
-          else data[key].gider += Math.abs(item.amount);
-        }
-      });
-    } else if (period === 'monthly') {
-      for (let i = 3; i >= 0; i--) {
-        const label = `${i + 1}. Hafta`;
-        data[i] = { name: label, gelir: 0, gider: 0 };
-      }
-      filteredData.forEach(item => {
-        const d = item.date instanceof Timestamp ? item.date.toDate() : new Date(item.date);
-        const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-        const weekIndex = 3 - Math.floor(diffDays / 7);
-        if (data[weekIndex] && weekIndex >= 0) {
-          if (item.type === 'income') data[weekIndex].gelir += item.amount;
-          else data[weekIndex].gider += Math.abs(item.amount);
-        }
-      });
-    } else {
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date();
-        d.setMonth(now.getMonth() - i);
-        const label = d.toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' });
-        const key = `${d.getFullYear()}-${d.getMonth()}`;
-        data[key] = { name: label, gelir: 0, gider: 0 };
-      }
-      filteredData.forEach(item => {
-        const d = item.date instanceof Timestamp ? item.date.toDate() : new Date(item.date);
-        const key = `${d.getFullYear()}-${d.getMonth()}`;
-        if (data[key]) {
-          if (item.type === 'income') data[key].gelir += item.amount;
-          else data[key].gider += Math.abs(item.amount);
-        }
-      });
-    }
-
-    return Object.values(data);
-  }, [filteredData, period]);
-
-  const handleDownloadPdf = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text("Finansal Rapor", pageWidth / 2, 20, { align: "center" });
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Donem: ${period === 'weekly' ? 'Haftalik' : period === 'monthly' ? 'Aylik' : 'Yillik'}`, 14, 30);
-    doc.text(`Kategori: ${categoryFilter}`, 14, 35);
-    doc.text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, 14, 40);
-
-    const totalInc = filteredData.filter(item => item.type === 'income').reduce((acc, item) => acc + item.amount, 0);
-    const totalExp = filteredData.filter(item => item.type === 'expense').reduce((acc, item) => acc + Math.abs(item.amount), 0);
-    const net = totalInc - totalExp;
-
-    doc.setFont("helvetica", "bold");
-    doc.text(`Toplam Gelir: ${totalInc.toLocaleString('tr-TR')} TL`, 14, 55);
-    doc.text(`Toplam Gider: ${totalExp.toLocaleString('tr-TR')} TL`, 14, 62);
-    doc.text(`Net Tasarruf: ${net.toLocaleString('tr-TR')} TL`, 14, 69);
-
-    const headers = [['Tarih', 'Baslik', 'Kategori', 'Tur', 'Durum', 'Tutar']];
-    const rows = filteredData.map(item => [
-      item.date instanceof Timestamp ? item.date.toDate().toLocaleDateString('tr-TR') : item.date,
-      item.title,
-      item.category,
-      item.type === 'income' ? 'Gelir' : 'Gider',
-      item.isPlanned ? 'Planli' : 'Gerceklesmis',
-      `${item.amount.toLocaleString('tr-TR')} TL`
-    ]);
-
-    (doc as any).autoTable({
-      head: headers,
-      body: rows,
-      startY: 80,
-      styles: { fontSize: 8 },
-      headStyles: { fillStyle: '#001736' }
-    });
-
-    doc.save(`finansal_rapor_${period}.pdf`);
-  };
-
-  const totalIncome = filteredData.filter(item => item.type === 'income').reduce((acc, item) => acc + item.amount, 0);
-  const totalExpense = filteredData.filter(item => item.type === 'expense').reduce((acc, item) => acc + Math.abs(item.amount), 0);
-  const netSavings = totalIncome - totalExpense;
-
+const SettingsScreen = ({ user, onLogout, onToggleTheme, isDarkMode, handleDataRepair, enableNotifications, setEnableNotifications, setToast }: { 
+  user: User, 
+  onLogout: () => void, 
+  onToggleTheme: () => void, 
+  isDarkMode: boolean, 
+  handleDataRepair: () => void,
+  enableNotifications: boolean,
+  setEnableNotifications: (v: boolean) => void,
+  setToast: (t: {title: string, message: string} | null) => void
+}) => {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-8"
+      className="space-y-6 pb-20"
     >
-      <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h2 className="font-headline text-3xl font-extrabold tracking-tight text-primary">Raporlar & Analiz</h2>
-          <p className="text-on-surface-variant max-w-md text-sm">Finansal sağlığınızı detaylı grafikler ve planlı harcama analizleri ile takip edin.</p>
-        </div>
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="bg-surface-container-low px-4 py-1.5 rounded-full flex items-center gap-2 border border-outline-variant/30 shadow-sm">
-            <Filter className="w-3.5 h-3.5 text-primary" />
-                  <select 
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="bg-transparent border-none text-[10px] font-bold uppercase tracking-widest text-primary focus:ring-0 cursor-pointer appearance-none pr-6"
-                  >
-                    {categories.map(c => <option key={c} value={c} className="bg-surface text-on-surface">{c}</option>)}
-                  </select>
+      <h2 className="font-headline text-3xl font-extrabold tracking-tight text-primary">Ayarlar</h2>
+      
+      <div className="bg-surface-container-low rounded-3xl p-6 border border-outline-variant/30 shadow-sm">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <UserIcon className="w-8 h-8" />
           </div>
-
-          <div className="flex bg-surface-container-low p-1 rounded-full border border-outline-variant/30">
-            {(['weekly', 'monthly', 'yearly'] as Period[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={cn(
-                  "px-4 py-2 rounded-full text-xs font-bold transition-all",
-                  period === p ? "bg-primary text-surface shadow-md" : "text-on-surface-variant hover:bg-surface-container-high"
-                )}
-              >
-                {p === 'weekly' ? 'Haftalık' : p === 'monthly' ? 'Aylık' : 'Yıllık'}
-              </button>
-            ))}
+          <div>
+            <h3 className="font-bold text-lg text-on-surface">{user.email}</h3>
+            <p className="text-on-surface-variant text-sm">Hesap Bilgileri</p>
           </div>
         </div>
-      </section>
-
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className="md:col-span-8 bg-surface-container-low rounded-3xl p-8 flex flex-col gap-6 shadow-sm border border-outline-variant/50">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="font-headline text-xl font-bold">Gelir vs Gider</h3>
-              <p className="text-on-surface-variant text-xs font-medium">Trend analizi (Bekleyen ödemeler dahil)</p>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-primary"></span>
-                <span className="text-[10px] font-bold uppercase tracking-wider">Gelir</span>
+        
+        <div className="space-y-2">
+            <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-container-high transition-all text-sm font-bold text-on-surface border border-outline-variant/20">
+              <Settings className="w-5 h-5 text-primary" /> Genel Ayarlar
+            </button>
+            <button 
+              onClick={handleDataRepair}
+              className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-container-high transition-all text-sm font-bold text-on-surface border border-outline-variant/20"
+            >
+              <ShieldCheck className="w-5 h-5 text-tertiary" /> Verileri Optimize Et (Onar)
+            </button>
+            <button 
+              onClick={onToggleTheme}
+              className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-surface-container-high transition-all text-sm font-bold text-on-surface border border-outline-variant/20"
+            >
+              <div className="flex items-center gap-4">
+                {isDarkMode ? <Sun className="w-5 h-5 text-primary" /> : <Moon className="w-5 h-5 text-primary" />}
+                {isDarkMode ? 'Aydınlık Mod' : 'Karanlık Mod'}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-on-primary-container"></span>
-                <span className="text-[10px] font-bold uppercase tracking-wider">Gider</span>
+            </button>
+            <button 
+              onClick={() => {
+                setToast({ title: 'Test Bildirimi', message: 'Bu, ödeme hatırlatıcılarının nasıl görüneceğidir!' });
+                setTimeout(() => setToast(null), 5000);
+              }}
+              className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-surface-container-high transition-all text-sm font-bold text-on-surface border border-outline-variant/20"
+            >
+              <div className="flex items-center gap-4">
+                <Bell className="w-5 h-5 text-primary" /> Bildirim Test Et
               </div>
-            </div>
-          </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-              <ReBarChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--outline-variant)" opacity={0.5} />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 10, fontWeight: 700, fill: 'var(--on-surface-variant)' }} 
-                />
-                <YAxis hide />
-                <Tooltip 
-                  cursor={{ fill: 'var(--on-surface-variant)', opacity: 0.1 }}
-                  contentStyle={{ 
-                    backgroundColor: 'var(--surface)', 
-                    color: 'var(--on-surface)',
-                    borderRadius: '16px', 
-                    border: '1px solid var(--outline-variant)', 
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)' 
-                  }}
-                  itemStyle={{ color: 'var(--primary)', fontWeight: 'bold' }}
-                  formatter={(value: number) => `₺${value.toLocaleString('tr-TR')}`}
-                />
-                <Bar dataKey="gelir" fill="var(--tertiary)" radius={[6, 6, 0, 0]} barSize={24} />
-                <Bar dataKey="gider" fill="var(--error)" radius={[6, 6, 0, 0]} barSize={24} />
-              </ReBarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-          <div className="md:col-span-4 wealth-gradient text-white rounded-3xl p-8 flex flex-col justify-between overflow-hidden relative shadow-xl min-h-[220px]">
-          <div className="relative z-10">
-            <h3 className="font-headline text-lg font-bold mb-1">Net Tasarruf</h3>
-            <div className="flex items-center gap-2 text-tertiary-fixed">
-              {netSavings >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5 text-error" />}
-              <span className={cn("text-[10px] font-bold uppercase tracking-wider", netSavings < 0 && "text-error")}>
-                {netSavings >= 0 ? 'Pozitif Bakiye' : 'Bütçe Aşımı'}
-              </span>
-            </div>
-            <div className="mt-4">
-              <span className="text-3xl font-headline font-extrabold tracking-tight">
-                ₺{netSavings.toLocaleString('tr-TR')}
-              </span>
-            </div>
-          </div>
-          <button 
-            onClick={handleDownloadPdf}
-            className="relative z-10 w-full bg-surface/10 hover:bg-surface/20 text-white backdrop-blur-md transition-colors py-3 rounded-xl font-bold text-[10px] mt-6 border border-white/10 flex items-center justify-center gap-2 uppercase tracking-widest"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Raporu İndir
-          </button>
-        </div>
-
-        <div className="md:col-span-4 bg-surface-container-low rounded-3xl p-6 shadow-sm border border-outline-variant/50 flex flex-col justify-center">
-          <h3 className="font-headline text-lg sm:text-xl font-bold mb-6 text-primary">Harcama Dağılımı</h3>
-          <div className="flex flex-row items-center gap-4 sm:gap-6">
-            <div className="w-28 h-28 sm:w-48 sm:h-48 shrink-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-                <RePieChart>
-                  <Pie
-                    data={pieData.length > 0 ? pieData : [{ name: 'Veri Yok', value: 100, color: 'var(--outline-variant)' }]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={isDarkMode ? "55%" : "60%"}
-                    outerRadius="85%"
-                    paddingAngle={5}
-                    dataKey="amount"
-                    stroke="none"
-                  >
-                    {(pieData.length > 0 ? pieData : [{ color: 'var(--outline-variant)' }]).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </RePieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="w-full flex-1 space-y-2">
-              {pieData.slice(0, 4).map(item => (
-                <div key={item.name} className="flex items-center justify-between py-1 border-b border-outline-variant/10 last:border-0">
-                  <div className="flex items-center gap-3">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
-                    <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">{item.name}</span>
-                  </div>
-                  <p className="text-xs font-extrabold text-primary">%{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="md:col-span-8 bg-surface-container-low rounded-3xl p-8 shadow-sm border border-outline-variant/50">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-headline text-xl font-bold text-primary">İşlem Detayları</h3>
-            <span className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded-full uppercase tracking-widest">
-              {filteredData.length} İşlem
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-outline-variant/30">
-                  <th className="py-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Tarih</th>
-                  <th className="py-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Başlık</th>
-                  <th className="py-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Durum</th>
-                  <th className="py-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Tutar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/10">
-                {filteredData.map((item) => {
-                  const Icon = (item.subCategory && CATEGORY_ICONS[item.subCategory]) || CATEGORY_ICONS[item.category] || ShoppingBag;
-                  return (
-                    <tr key={item.id} className={cn("hover:bg-surface-container-high transition-colors", item.isPlanned && "bg-primary/5")}>
-                      <td className="py-4 px-2">
-                        <p className="text-xs font-bold text-on-surface-variant">
-                          {item.date instanceof Timestamp ? item.date.toDate().toLocaleDateString('tr-TR') : typeof item.date === 'string' ? item.date.split('-').reverse().join('/') : new Date(item.date).toLocaleDateString('tr-TR')}
-                        </p>
-                      </td>
-                      <td className="py-4 px-2">
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "w-8 h-8 rounded-lg flex items-center justify-center shadow-sm",
-                            item.type === 'income' ? "bg-tertiary/10 text-tertiary" : "bg-primary/5 text-primary"
-                          )}>
-                            <Icon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-on-surface">{item.title}</p>
-                            <p className="text-[9px] font-bold text-on-surface-variant uppercase">{item.subCategory || item.category}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-2">
-                        <span className={cn(
-                          "text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-tighter",
-                          item.isPlanned ? "bg-primary/10 text-primary" : "bg-surface-container-highest text-on-surface-variant"
-                        )}>
-                          {item.isPlanned ? 'PLANLI' : 'ÖDENDİ'}
-                        </span>
-                      </td>
-                      <td className="py-4 px-2 text-right">
-                        <p className={cn(
-                          "text-sm font-extrabold data-value",
-                          item.type === 'income' ? "text-tertiary" : "text-on-surface"
-                        )}>
-                          {item.type === 'income' ? '+' : '-'}₺{Math.abs(item.amount).toLocaleString('tr-TR')}
-                        </p>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {filteredData.length === 0 && (
-              <div className="text-center py-12">
-                <Search className="w-12 h-12 text-outline mx-auto mb-4 opacity-20" />
-                <p className="text-sm text-on-surface-variant font-medium">Bu filtre ile sonuç bulunamadı.</p>
+            </button>
+            <button 
+              onClick={() => setEnableNotifications(!enableNotifications)}
+              className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-surface-container-high transition-all text-sm font-bold text-on-surface border border-outline-variant/20"
+            >
+              <div className="flex items-center gap-4">
+                <Bell className="w-5 h-5 text-primary" /> Bildirimler
               </div>
-            )}
-          </div>
+              <div className={cn(
+                "w-12 h-6 rounded-full relative transition-colors",
+                enableNotifications ? "bg-primary" : "bg-outline-variant"
+              )}>
+                <div className={cn(
+                  "absolute top-1 w-4 h-4 rounded-full transition-all",
+                  enableNotifications ? "left-7 bg-surface" : "left-1 bg-white"
+                )} />
+              </div>
+            </button>
         </div>
       </div>
+
+      <button 
+        onClick={onLogout}
+        className="w-full flex items-center justify-center gap-2 py-4 bg-error/10 text-error rounded-2xl font-bold hover:bg-error/20 transition-colors"
+      >
+        <LogOut className="w-4 h-4" />
+        Güvenli Çıkış
+      </button>
     </motion.div>
   );
 };
+
+// ... (No residual trash here)
 
 const LoginScreen = () => (
   <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-surface">
@@ -2864,6 +2588,8 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment, onEdit }: { user: Use
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [enableNotifications, setEnableNotifications] = useState(true);
+  const [toast, setToast] = useState<{title: string, message: string} | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -3112,6 +2838,33 @@ export default function App() {
     };
   }, [user]);
 
+  // Toast Checker
+  useEffect(() => {
+    if (!enableNotifications || !payments.length) return;
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    const triggeredReminders = new Set<string>();
+
+    payments.forEach(p => {
+        const dueDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+        dueDate.setHours(0,0,0,0);
+        
+        const dayBefore = new Date(dueDate);
+        dayBefore.setDate(dayBefore.getDate() - 1);
+        
+        if (p.reminders?.includes('day_of') && dueDate.getTime() === today.getTime()) {
+            setToast({ title: 'Ödeme Hatırlatıcı', message: `${p.title} bugün ödenmeli!` });
+        } else if (p.reminders?.includes('one_day_before') && dayBefore.getTime() === today.getTime()) {
+            setToast({ title: 'Ödeme Hatırlatıcı', message: `${p.title} yarın ödenmeli!` });
+        }
+    });
+
+    const timer = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [payments, enableNotifications]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface">
@@ -3202,7 +2955,16 @@ export default function App() {
           }}
         />
       );
-      case 'reports': return <ReportsScreen transactions={transactions} payments={payments} isDarkMode={isDarkMode} />;
+      case 'settings': return <SettingsScreen 
+        user={user} 
+        onLogout={logout} 
+        isDarkMode={isDarkMode} 
+        onToggleTheme={() => setIsDarkMode(!isDarkMode)} 
+        handleDataRepair={handleDataRepair} 
+        enableNotifications={enableNotifications}
+        setEnableNotifications={setEnableNotifications}
+        setToast={setToast}
+      />;
       default: return <HomeScreen user={user} transactions={transactions} payments={payments} setActiveTab={setActiveTab} />;
     }
   };
@@ -3213,13 +2975,34 @@ export default function App() {
       case 'transactions': return 'Hesap Hareketleri';
       case 'add': return 'Yeni İşlem';
       case 'payments': return 'Planlı Ödemeler';
-      case 'reports': return 'Analiz';
+      case 'settings': return 'Ayarlar';
       default: return '';
     }
   };
 
   return (
     <div className="min-h-screen pb-32 bg-surface transition-colors duration-300">
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-0 left-0 right-0 z-[200] p-4 pt-10"
+          >
+            <div className="bg-surface border border-outline-variant shadow-xl rounded-2xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <Bell className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h4 className="font-bold text-on-surface">{toast.title}</h4>
+                <p className="text-sm text-on-surface-variant font-medium">{toast.message}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <TopBar 
         user={user} 
         isDarkMode={isDarkMode} 
