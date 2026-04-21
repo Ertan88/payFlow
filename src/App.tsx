@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Home, 
@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CheckCircle2,
   Filter,
   Download,
@@ -49,12 +50,15 @@ import {
   User as UserIcon,
   Settings,
   Clock,
+  Calendar,
   Edit2,
   Landmark,
   Receipt,
   FileText,
   Banknote,
-  Coins
+  Coins,
+  Copy,
+  ShieldCheck
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { 
@@ -105,6 +109,7 @@ interface Transaction {
   icon: any;
   location?: string;
   note?: string;
+  description?: string;
   isRecurring?: boolean;
   frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
   lastGeneratedDate?: any;
@@ -123,7 +128,10 @@ interface Payment {
   amount: number;
   status: 'pending' | 'automatic' | 'paid';
   category: string;
+  subCategory?: string;
   icon: any;
+  note?: string;
+  description?: string;
   reminderTime?: string; // Legacy field
   reminders?: string[]; // Array of strings like '1_day_before', '2_hours_before', etc.
   isRecurring?: boolean;
@@ -144,12 +152,14 @@ const CATEGORY_ICONS: Record<string, any> = {
   'Doğalgaz': Flame,
   'İnternet': Wifi,
   'Telefon': Smartphone,
+  'Abonelik': Repeat,
+  'Market': ShoppingBag,
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
   // Gelir (Income)
   'Maaş': 'bg-emerald-500/10 text-emerald-500',
-  'Ek Gelir': 'bg-indigo-500/10 text-indigo-500',
+  'Ek Gelir': 'bg-sky-500/10 text-sky-500',
   'Satış': 'bg-teal-500/10 text-teal-500',
   'Bonus': 'bg-lime-500/10 text-lime-600',
   
@@ -158,6 +168,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Kredi Kartı': 'bg-fuchsia-500/10 text-fuchsia-500',
   'Kira': 'bg-blue-600/10 text-blue-600',
   'Alışveriş': 'bg-rose-500/10 text-rose-500',
+  'Abonelik': 'bg-indigo-600/10 text-indigo-600',
   'Sabit Gider': 'bg-slate-500/10 text-slate-500',
   
   // Alt Fatura/Ödeme Tipleri
@@ -169,6 +180,36 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Telefon': 'bg-green-500/10 text-green-500',
   
   'Diğer': 'bg-zinc-500/10 text-zinc-500'
+};
+
+const COLOR_MAP: Record<string, string> = {
+  'emerald-500': '#10b981',
+  'sky-500': '#0ea5e9',
+  'indigo-500': '#6366f1',
+  'teal-500': '#14b8a6',
+  'lime-500': '#84cc16',
+  'lime-600': '#65a30d',
+  'violet-500': '#8b5cf6',
+  'fuchsia-500': '#d946ef',
+  'blue-600': '#2563eb',
+  'rose-500': '#f43f5e',
+  'indigo-600': '#4f46e5',
+  'slate-500': '#64748b',
+  'amber-500': '#f59e0b',
+  'yellow-500': '#eab308',
+  'yellow-600': '#ca8a04',
+  'cyan-500': '#06b6d4',
+  'orange-600': '#ea580c',
+  'blue-500': '#3b82f6',
+  'green-500': '#22c55e',
+  'zinc-500': '#71717a'
+};
+
+const getBorderColorValue = (categoryColor: string) => {
+  const match = categoryColor.match(/text-([a-z0-9-]+)/);
+  if (!match) return '#3b82f6'; // default primary
+  const colorName = match[1];
+  return COLOR_MAP[colorName] || '#3b82f6';
 };
 
 const BANK_OPTIONS = [
@@ -208,6 +249,7 @@ const EXPENSE_CATEGORIES = [
   { id: 'exp-2', label: 'Kredi', icon: Landmark },
   { id: 'exp-3', label: 'Kredi Kartı', icon: CreditCard },
   { id: 'exp-4', label: 'Kira', icon: Building2 },
+  { id: 'exp-5', label: 'Abonelik', icon: Repeat },
   { id: 'exp-9', label: 'Diğer', icon: HelpCircle },
 ];
 
@@ -220,6 +262,214 @@ interface AppNotification {
   timestamp: Date;
   isRead: boolean;
 }
+
+const MONTH_NAMES_TR = [
+  "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+];
+
+const DatePickerModal = ({ 
+  isOpen, 
+  onClose, 
+  value, 
+  onChange, 
+  title = "Son Ödeme Tarihi" 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  value: string; 
+  onChange: (date: string) => void;
+  title?: string;
+}) => {
+  const [tempDay, setTempDay] = useState(1);
+  const [tempMonth, setTempMonth] = useState(0); // 0-indexed
+  const [tempYear, setTempYear] = useState(new Date().getFullYear());
+
+  useEffect(() => {
+    if (isOpen && value) {
+      const d = new Date(value);
+      if (!isNaN(d.getTime())) {
+        setTempDay(d.getDate());
+        setTempMonth(d.getMonth());
+        setTempYear(d.getFullYear());
+      }
+    }
+  }, [isOpen, value]);
+
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const result = [];
+    for (let i = currentYear - 5; i <= currentYear + 10; i++) {
+      result.push(i);
+    }
+    return result;
+  }, []);
+
+  const daysInMonth = useMemo(() => {
+    return new Date(tempYear, tempMonth + 1, 0).getDate();
+  }, [tempYear, tempMonth]);
+
+  const days = useMemo(() => {
+    const result = [];
+    for (let i = 1; i <= daysInMonth; i++) {
+      result.push(i);
+    }
+    return result;
+  }, [daysInMonth]);
+
+  useEffect(() => {
+    if (tempDay > daysInMonth) {
+      setTempDay(daysInMonth);
+    }
+  }, [daysInMonth, tempDay]);
+
+  const handleSave = () => {
+    const d = new Date(tempYear, tempMonth, tempDay);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    onChange(`${yyyy}-${mm}-${dd}`);
+    onClose();
+  };
+
+  const Column = memo(({ 
+    items, 
+    value, 
+    onChange 
+  }: { 
+    items: (string | number)[], 
+    value: number, 
+    onChange: (val: number) => void 
+  }) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const itemHeight = 44;
+    const [activeIndex, setActiveIndex] = useState(0);
+    const isScrolling = useRef(false);
+    const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
+
+    // Initial positioning
+    useEffect(() => {
+      let targetIndex = -1;
+      if (typeof items[0] === 'string') {
+        targetIndex = value; 
+      } else {
+        targetIndex = items.indexOf(value);
+      }
+
+      if (scrollRef.current && targetIndex !== -1 && !isScrolling.current) {
+        scrollRef.current.scrollTop = targetIndex * itemHeight;
+        setActiveIndex(targetIndex);
+      }
+    }, [value, items]);
+
+    const handleScroll = () => {
+      if (!scrollRef.current) return;
+      isScrolling.current = true;
+      
+      const scrollPos = scrollRef.current.scrollTop;
+      const index = Math.round(scrollPos / itemHeight);
+      
+      if (index !== activeIndex && index >= 0 && index < items.length) {
+        setActiveIndex(index);
+      }
+
+      // Clear existing timeout
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+
+      // We update parent state slightly delayed or when scroll settles
+      // but to keep it feeling fast we use 30ms - feels instant but breaks the re-render loop
+      scrollTimeout.current = setTimeout(() => {
+        isScrolling.current = false;
+        if (index >= 0 && index < items.length) {
+          let newValue: number;
+          if (typeof items[index] === 'string') {
+            newValue = index;
+          } else {
+            newValue = items[index] as number;
+          }
+          onChange(newValue);
+        }
+      }, 30);
+    };
+
+    return (
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto no-scrollbar snap-y snap-mandatory h-[220px] py-[88px] overscroll-none touch-pan-y"
+      >
+        {items.map((item, i) => (
+          <div 
+            key={i}
+            className={cn(
+              "h-[44px] flex items-center justify-center snap-center text-lg pointer-events-none transition-colors duration-150",
+              i === activeIndex 
+                ? "text-primary font-bold" 
+                : "text-on-surface-variant/20"
+            )}
+          >
+            {item}
+          </div>
+        ))}
+      </div>
+    );
+  });
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-end justify-center">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.div 
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="relative w-full max-w-lg bg-surface rounded-t-[32px] overflow-hidden shadow-2xl pb-safe"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-outline-variant/10">
+              <button 
+                onClick={onClose} 
+                className="text-on-surface-variant font-bold text-base hover:opacity-70 transition-opacity"
+              >
+                İptal
+              </button>
+              <h3 className="font-headline font-bold text-on-surface text-lg">{title}</h3>
+              <button 
+                onClick={handleSave} 
+                className="text-primary font-bold text-base hover:opacity-70 transition-opacity"
+              >
+                Kaydet
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 relative bg-surface-container-lowest">
+              {/* Highlight Bar */}
+              <div className="absolute top-1/2 left-6 right-6 h-11 -translate-y-1/2 bg-primary/5 rounded-2xl pointer-events-none border border-primary/10 shadow-inner" />
+              
+              <div className="flex gap-4">
+                <Column items={days} value={tempDay} onChange={setTempDay} />
+                <Column items={MONTH_NAMES_TR} value={tempMonth} onChange={setTempMonth} />
+                <Column items={years} value={tempYear} onChange={setTempYear} />
+              </div>
+            </div>
+
+            {/* Grabber for touch devices */}
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-outline-variant/30" />
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
 
 const TopBar = ({ 
   user, 
@@ -314,8 +564,8 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
   ];
 
   return (
-    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md">
-      <div className="bg-surface/90 backdrop-blur-xl rounded-2xl p-1.5 flex items-center justify-between shadow-2xl border border-outline-variant/30">
+    <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[96%] max-w-md">
+      <div className="bg-surface/90 backdrop-blur-xl rounded-2xl p-2 flex items-center justify-between shadow-2xl border border-outline-variant/30">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -327,15 +577,15 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
               className={cn(
                 "relative flex flex-col items-center justify-center transition-all duration-300",
                 tab.isCenter 
-                  ? "w-11 h-11 -mt-7 bg-primary rounded-xl shadow-lg hover:scale-105 active:scale-95 z-10 border-4 border-surface" 
-                  : "flex-1 py-1.5 px-0.5 rounded-xl",
+                  ? "w-14 h-14 -mt-8 bg-primary rounded-[1.25rem] shadow-lg hover:scale-105 active:scale-95 z-10 border-[5px] border-surface" 
+                  : "flex-1 py-2.5 px-1 rounded-xl",
                 !tab.isCenter && (isActive ? "text-primary" : "text-on-surface-variant hover:text-primary")
               )}
             >
               {isActive && !tab.isCenter && (
                 <motion.div 
                   layoutId="activeTabUnderline"
-                  className="absolute bottom-0 w-1 h-1 bg-primary rounded-full"
+                  className="absolute bottom-0 w-1.5 h-1.5 bg-primary rounded-full"
                   transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                 />
               )}
@@ -343,13 +593,13 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
                 strokeWidth={isActive || tab.isCenter ? 2.5 : 2}
                 className={cn(
                   "transition-all duration-300",
-                  tab.isCenter ? "w-5 h-5 text-surface" : "w-4 h-4 mb-0.5",
+                  tab.isCenter ? "w-6 h-6 text-surface" : "w-[22px] h-[22px] mb-1",
                   isActive && !tab.isCenter ? "scale-110" : "opacity-70"
                 )} 
               />
               {!tab.isCenter && (
                 <span className={cn(
-                  "text-[7px] font-bold uppercase tracking-widest transition-all whitespace-nowrap",
+                  "text-[9px] font-bold uppercase tracking-widest transition-all whitespace-nowrap",
                   isActive ? "opacity-100" : "opacity-50"
                 )}>
                   {tab.label}
@@ -400,84 +650,6 @@ function ConfirmModal({ title, message, onConfirm, onCancel, confirmText = "Sil"
             className="w-full py-3 sm:py-4 text-on-surface-variant font-bold text-xs sm:text-sm hover:bg-surface-container-low rounded-xl sm:rounded-2xl transition-all"
           >
             {cancelText}
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function EditPaymentModal({ payment, onSave, onClose }: any) {
-  const getInitialDate = (date: any) => {
-    if (date instanceof Timestamp) return date.toDate().toISOString().split('T')[0];
-    if (typeof date === 'string') return date;
-    try {
-      return new Date(date).toISOString().split('T')[0];
-    } catch (e) {
-      return '';
-    }
-  };
-
-  const [amount, setAmount] = useState(payment.amount?.toString() || '0');
-  const [dueDate, setDueDate] = useState(getInitialDate(payment.dueDate));
-  const [status, setStatus] = useState(payment.status || 'pending');
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary/40 backdrop-blur-md">
-      <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="bg-surface rounded-[28px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl space-y-5 sm:space-y-6 border border-outline-variant/30"
-      >
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg sm:text-xl font-headline font-bold text-primary">Ödemeyi Düzenle</h3>
-          <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
-            <X className="w-5 h-5 text-outline" />
-          </button>
-        </div>
-        
-        <div className="space-y-3 sm:space-y-4">
-          <div>
-            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1.5 sm:mb-2 px-1">TUTAR</label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-primary">₺</span>
-              <input 
-                type="number" 
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full bg-surface-container-low p-3.5 sm:p-4 pl-8 rounded-xl sm:rounded-2xl border border-outline-variant/20 focus:border-primary transition-all font-bold text-primary text-base sm:text-lg"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1.5 sm:mb-2 px-1">TARİH</label>
-            <input 
-              type="date" 
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full bg-surface-container-low p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-outline-variant/20 focus:border-primary transition-all font-bold text-primary text-sm sm:text-base"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1.5 sm:mb-2 px-1">DURUM</label>
-            <select 
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="w-full bg-surface-container-low p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-outline-variant/20 focus:border-primary transition-all font-bold text-primary appearance-none cursor-pointer text-sm sm:text-base"
-            >
-              <option value="pending">BEKLİYOR</option>
-              <option value="paid">ÖDENDİ</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex gap-2.5 sm:gap-3 pt-1 sm:pt-2">
-          <button onClick={onClose} className="flex-1 py-3 sm:py-4 text-on-surface-variant text-xs sm:text-sm font-bold hover:bg-surface-container-low rounded-xl sm:rounded-2xl transition-all border border-transparent hover:border-outline-variant/20">Vazgeç</button>
-          <button 
-            onClick={() => onSave({ amount: Number(amount), dueDate, status })}
-            className="flex-1 wealth-gradient text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold font-headline shadow-lg active:scale-95 transition-all text-sm sm:text-base"
-          >
-            Güncelle
           </button>
         </div>
       </motion.div>
@@ -590,6 +762,7 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
         amount: Math.abs(tx.amount), // ensure absolute, sign via type
         type: tx.type,
         category: tx.category,
+        subCategory: tx.subCategory,
         date: tx.date,
         createdAt: tx.createdAt instanceof Timestamp ? tx.createdAt.toDate().getTime() : (tx.date instanceof Timestamp ? tx.date.toDate().getTime() : new Date(tx.date).getTime()),
         isRecurring: tx.isRecurring,
@@ -601,6 +774,7 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
         amount: Math.abs(p.amount),
         type: 'expense' as const,
         category: p.category,
+        subCategory: p.subCategory,
         date: p.dueDate,
         createdAt: p.createdAt instanceof Timestamp ? p.createdAt.toDate().getTime() : (p.dueDate instanceof Timestamp ? p.dueDate.toDate().getTime() : new Date(p.dueDate).getTime()),
         isRecurring: false,
@@ -785,8 +959,8 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
           </div>
         </div>
 
-        <div className="bg-surface-container-low rounded-3xl p-3 sm:p-5 border border-outline-variant/50 shadow-sm flex flex-row items-center gap-2 sm:gap-6">
-          <div className="w-[120px] h-[120px] sm:w-[150px] sm:h-[150px] shrink-0 relative">
+        <div className="bg-surface-container-low rounded-3xl p-4 sm:p-6 border border-outline-variant/50 shadow-sm flex flex-row items-center gap-3 sm:gap-8">
+          <div className="w-[140px] h-[140px] sm:w-[200px] sm:h-[200px] shrink-0 relative">
             <div style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
               <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                 <RePieChart>
@@ -809,15 +983,15 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
                 </RePieChart>
               </ResponsiveContainer>
             </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 z-10 overflow-hidden bg-surface/50 sm:bg-transparent rounded-full backdrop-blur-[2px] sm:backdrop-blur-none m-4 sm:m-0">
-              <p className="text-[7px] sm:text-[8px] font-bold text-outline uppercase tracking-widest leading-none mb-0.5">Toplam</p>
-              <p className="text-[10px] sm:text-[12px] font-bold font-headline text-primary w-full text-center truncate">
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 z-10 overflow-hidden rounded-full">
+              <p className="text-[8px] sm:text-[10px] font-bold text-outline uppercase tracking-widest leading-none mb-1">Toplam</p>
+              <p className="text-xs sm:text-base font-bold font-headline text-primary w-full text-center truncate px-2 sm:px-3">
                 ₺{totalValue.toLocaleString('tr-TR')}
               </p>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto no-scrollbar h-[110px] sm:h-[140px] pr-1">
+          <div className="w-full flex-1 overflow-y-auto no-scrollbar h-[140px] sm:h-[200px] pr-1">
             {pieData.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full opacity-40">
                 <PieChartIcon className="w-5 h-5 mb-1" />
@@ -866,34 +1040,35 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
         </div>
         <div className="space-y-2">
           {recentActivity.map((tx, i) => {
-            const Icon = CATEGORY_ICONS[tx.category] || ShoppingBag;
-            const categoryColor = CATEGORY_COLORS[tx.category] || (tx.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500");
+            const Icon = (tx.subCategory && CATEGORY_ICONS[tx.subCategory]) || CATEGORY_ICONS[tx.category] || ShoppingBag;
+            const categoryColor = (tx.subCategory && CATEGORY_COLORS[tx.subCategory]) || CATEGORY_COLORS[tx.category] || (tx.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500");
             return (
               <motion.div 
                 key={tx.id}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-surface-container-low p-2 sm:p-2 rounded-xl flex items-center gap-2 transition-all hover:shadow-md group border border-outline-variant/50"
+                className="bg-surface-container-low p-3.5 sm:p-4 rounded-2xl flex items-center gap-3 transition-all hover:shadow-md group border border-outline-variant/30 shadow-sm overflow-hidden relative"
+                style={{ borderLeft: `6px solid ${getBorderColorValue(categoryColor)}` }}
               >
                 <div className={cn(
-                  "w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
+                  "w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
                   categoryColor
                 )}>
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2} />
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={2} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="font-headline font-semibold text-on-surface text-xs sm:text-sm truncate leading-tight line-clamp-1">{tx.title}</h4>
-                    {tx.isRecurring && <Repeat className="w-2.5 h-2.5 text-primary opacity-40 shrink-0" />}
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-headline font-bold text-on-surface text-sm sm:text-base truncate leading-tight line-clamp-1">{tx.title}</h4>
+                    {tx.isRecurring && <Repeat className="w-3 h-3 text-primary opacity-40 shrink-0" />}
                   </div>
-                  <p className="text-[10px] text-on-surface-variant font-medium truncate mt-0.5">
-                    {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : tx.date}
+                  <p className="text-[11px] text-on-surface-variant font-semibold truncate mt-1">
+                    {tx.subCategory || tx.category} • {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : String(tx.date).split('-').reverse().join('/')}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className={cn(
-                    "font-bold text-sm sm:text-[15px] data-value tracking-tight",
+                    "font-bold text-base sm:text-lg data-value tracking-tighter",
                     tx.type === 'income' ? "text-emerald-500" : "text-rose-500"
                   )}>
                     {tx.type === 'income' ? '+' : '-'}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
@@ -921,8 +1096,12 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
             const diffTime = dueDate.getTime() - now.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
-            // Show only payments within the next 7 days, including today (diffDays >= 0 and <= 7)
-            return diffDays >= 0 && diffDays <= 7;
+            // Show unpaid payments that are either overdue (diffDays < 0) or due within the next 15 days
+            return diffDays <= 15;
+          }).sort((a, b) => {
+            const dateA = a.dueDate instanceof Timestamp ? a.dueDate.toDate() : new Date(a.dueDate);
+            const dateB = b.dueDate instanceof Timestamp ? b.dueDate.toDate() : new Date(b.dueDate);
+            return dateA.getTime() - dateB.getTime();
           }).map((p, i) => {
             const dueDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
             dueDate.setHours(23, 59, 59, 999);
@@ -931,10 +1110,8 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
             const diffTime = dueDate.getTime() - now.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
-            const subCat = BILL_SUB_CATEGORIES.find(s => s.label === p.title || p.title.toLowerCase().includes(s.label.toLowerCase()));
-            const pCategoryValue = subCat ? subCat.label : p.category;
-            const Icon = CATEGORY_ICONS[pCategoryValue] || Zap;
-            const categoryColor = CATEGORY_COLORS[pCategoryValue] || "bg-primary/10 text-primary";
+            const Icon = (p.subCategory && CATEGORY_ICONS[p.subCategory]) || CATEGORY_ICONS[p.category] || Zap;
+            const categoryColor = (p.subCategory && CATEGORY_COLORS[p.subCategory]) || CATEGORY_COLORS[p.category] || "bg-primary/10 text-primary";
             
             return (
               <motion.div 
@@ -943,26 +1120,29 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.1 }}
                 onClick={() => setActiveTab('payments')}
-                className="bg-surface-container-low p-2 sm:p-2.5 rounded-xl flex items-center gap-2.5 transition-all hover:shadow-md group border border-outline-variant/50 cursor-pointer"
+                className="bg-surface-container-low p-3.5 sm:p-4 rounded-2xl flex items-center gap-3 transition-all hover:shadow-md group border border-outline-variant/30 cursor-pointer shadow-sm overflow-hidden relative"
+                style={{ borderLeft: `6px solid ${getBorderColorValue(categoryColor)}` }}
               >
                 <div className={cn(
-                  "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
+                  "w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
                   categoryColor
                 )}>
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2} />
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={2} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <h4 className="font-headline font-semibold text-on-surface text-xs sm:text-sm truncate leading-tight line-clamp-1">{p.title}</h4>
+                    <h4 className="font-headline font-bold text-on-surface text-sm sm:text-base truncate leading-tight line-clamp-1">{p.title}</h4>
                   </div>
-                  <p className="text-[10px] text-on-surface-variant font-medium truncate mt-0.5">
-                    {diffDays === 0 ? 'Bugün' : `${diffDays} gün kaldı`}
+                  <p className={cn(
+                    "text-[11px] font-semibold truncate mt-1",
+                    diffDays < 0 ? "text-rose-500" : "text-on-surface-variant"
+                  )}>
+                    {diffDays === 0 ? 'Bugün' : diffDays < 0 ? `${Math.abs(diffDays)} gün gecikti` : `${diffDays} gün kaldı`}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className={cn(
-                    "font-bold text-sm sm:text-[15px] data-value tracking-tight",
-                    "text-rose-500"
+                    "font-bold text-base sm:text-lg data-value tracking-tighter text-rose-500"
                   )}>
                     -₺{Math.abs(p.amount).toLocaleString('tr-TR')}
                   </p>
@@ -991,8 +1171,15 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
   );
 };
 
-const TransactionsScreen = ({ user, transactions, payments }: { user: User, transactions: Transaction[], payments: Payment[] }) => {
+const TransactionsScreen = ({ user, transactions, payments, onEdit, onDuplicate }: { 
+  user: User, 
+  transactions: Transaction[], 
+  payments: Payment[],
+  onEdit: (item: any) => void,
+  onDuplicate: (item: any) => void
+}) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tümü');
 
@@ -1048,6 +1235,7 @@ const TransactionsScreen = ({ user, transactions, payments }: { user: User, tran
         amount: Math.abs(tx.amount),
         type: tx.type,
         category: tx.category,
+        subCategory: tx.subCategory || null,
         date: tx.date,
         createdAt: tx.createdAt instanceof Timestamp ? tx.createdAt.toDate().getTime() : (tx.date instanceof Timestamp ? tx.date.toDate().getTime() : new Date(tx.date).getTime()),
         isRecurring: tx.isRecurring,
@@ -1061,6 +1249,7 @@ const TransactionsScreen = ({ user, transactions, payments }: { user: User, tran
         amount: Math.abs(p.amount),
         type: 'expense' as const,
         category: p.category,
+        subCategory: p.subCategory || null,
         date: p.dueDate,
         createdAt: p.createdAt instanceof Timestamp ? p.createdAt.toDate().getTime() : (p.dueDate instanceof Timestamp ? p.dueDate.toDate().getTime() : new Date(p.dueDate).getTime()),
         isRecurring: false,
@@ -1163,7 +1352,7 @@ const TransactionsScreen = ({ user, transactions, payments }: { user: User, tran
           </button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {['Tümü', 'Fatura', 'Kredi', 'Kredi Kartı', 'Kira', 'Market', 'Yemek', 'Gelir'].map((filter) => (
+          {['Tümü', 'Fatura', 'Kredi', 'Kredi Kartı', 'Kira', 'Gelir', 'Diğer'].map((filter) => (
             <button 
               key={filter}
               onClick={() => setActiveFilter(filter)}
@@ -1189,48 +1378,89 @@ const TransactionsScreen = ({ user, transactions, payments }: { user: User, tran
           </div>
           <div className="space-y-2">
             {filteredTransactions.map((tx, i) => {
-              const Icon = CATEGORY_ICONS[tx.category] || ShoppingBag;
-              const categoryColor = CATEGORY_COLORS[tx.category] || (tx.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500");
+              const Icon = (tx.subCategory && CATEGORY_ICONS[tx.subCategory]) || CATEGORY_ICONS[tx.category] || ShoppingBag;
+              const categoryColor = (tx.subCategory && CATEGORY_COLORS[tx.subCategory]) || CATEGORY_COLORS[tx.category] || (tx.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500");
               return (
-                <motion.div 
-                  key={tx.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="flex items-center p-2 sm:p-2.5 bg-surface-container-low rounded-xl shadow-sm hover:shadow-md transition-all border border-outline-variant/50 group"
-                >
-                  <div className={cn(
-                    "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
-                    categoryColor
-                  )}>
-                    <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2} />
-                  </div>
-                  <div className="ml-2.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-headline font-semibold text-on-surface text-xs sm:text-sm truncate leading-tight line-clamp-1">{tx.title}</h4>
-                      {tx.isRecurring && <Repeat className="w-2.5 h-2.5 text-primary opacity-40 shrink-0" />}
+                <div key={tx.id} className="flex flex-col">
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    onClick={() => setExpandedActionId(expandedActionId === tx.id ? null : tx.id)}
+                    className={cn(
+                      "flex items-center p-4 sm:p-5 bg-surface-container-low shadow-sm hover:shadow-md transition-all border border-outline-variant/30 group relative cursor-pointer",
+                      expandedActionId === tx.id ? "rounded-t-2xl border-b-0" : "rounded-2xl"
+                    )}
+                    style={{ borderLeft: `6px solid ${getBorderColorValue(categoryColor)}` }}
+                  >
+                    <div className={cn(
+                      "w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
+                      categoryColor
+                    )}>
+                      <Icon className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
                     </div>
-                    <p className="text-[10px] text-on-surface-variant font-medium truncate mt-0.5">
-                      {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : tx.date}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-1">
-                    <div className="text-right">
-                      <span className={cn(
-                        "font-bold text-sm sm:text-[15px] block data-value tracking-tight",
-                        tx.type === 'income' ? "text-emerald-500" : "text-rose-500"
-                      )}>
-                        {tx.type === 'income' ? '+' : '-'}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
-                      </span>
+                    <div className="ml-3.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-headline font-bold text-on-surface text-sm sm:text-base truncate leading-tight line-clamp-1">{tx.title}</h4>
+                        {tx.isRecurring && <Repeat className="w-3 h-3 text-primary opacity-40 shrink-0" />}
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant font-semibold truncate mt-1">
+                        {tx.subCategory || tx.category} • {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : String(tx.date).split('-').reverse().join('/')}
+                      </p>
                     </div>
-                    <button 
-                      onClick={() => setDeletingId(tx.isPayment ? tx.dbId : tx.id)}
-                      className="p-1 sm:p-1.5 text-outline hover:text-error transition-colors rounded-lg hover:bg-error/10"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
-                  </div>
-                </motion.div>
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-1">
+                      <div className="text-right">
+                        <span className={cn(
+                          "font-bold text-base sm:text-lg block data-value tracking-tighter",
+                          tx.type === 'income' ? "text-emerald-500" : "text-rose-500"
+                        )}>
+                          {tx.type === 'income' ? '+' : '-'}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
+                        </span>
+                      </div>
+                      <ChevronDown className={cn(
+                        "w-4 h-4 text-outline-variant transition-transform",
+                        expandedActionId === tx.id && "rotate-180"
+                      )} />
+                    </div>
+                  </motion.div>
+                  
+                  <AnimatePresence>
+                    {expandedActionId === tx.id && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden bg-surface-container-lowest border border-t-0 border-outline-variant/30 rounded-b-2xl shadow-sm"
+                        style={{ borderLeft: `6px solid ${getBorderColorValue(categoryColor)}` }}
+                      >
+                        <div className="flex p-3 gap-3">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEdit(tx);
+                              setExpandedActionId(null);
+                            }}
+                            className="flex-1 py-2.5 text-[12px] font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-xl transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                            Düzenle
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletingId(tx.isPayment ? tx.dbId : tx.id);
+                              setExpandedActionId(null);
+                            }}
+                            className="flex-1 py-2.5 text-[12px] font-bold text-error bg-error/10 hover:bg-error/20 rounded-xl transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Sil
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               );
             })}
             {filteredTransactions.length === 0 && (
@@ -1245,21 +1475,94 @@ const TransactionsScreen = ({ user, transactions, payments }: { user: User, tran
   );
 };
 
-const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: () => void }) => {
-  const [amount, setAmount] = useState('');
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState<'income' | 'expense'>('expense');
-  const [category, setCategory] = useState('Diğer');
-  const [subCategory, setSubCategory] = useState('');
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState('');
-  const [useCustomRule, setUseCustomRule] = useState(false);
-  const [customWeekIndex, setCustomWeekIndex] = useState('1');
-  const [customWeekday, setCustomWeekday] = useState('1');
+const AddSelectionScreen = ({ onSelect, onClose }: { onSelect: (type: 'transaction' | 'payment') => void, onClose: () => void }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="space-y-6 sm:space-y-10 flex flex-col items-center pt-8 md:pt-16"
+    >
+      <div className="text-center space-y-2 mb-4">
+        <h2 className="text-2xl font-headline font-extrabold text-primary tracking-tighter">Ne Eklemek İstersiniz?</h2>
+        <p className="text-on-surface-variant text-sm max-w-[280px] mx-auto">Lütfen eklemek istediğiniz kayıt türünü seçin.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md">
+        <button 
+          onClick={() => onSelect('transaction')}
+          className="bg-surface-container-low border border-outline-variant/30 p-6 rounded-3xl flex flex-col items-center justify-center gap-4 hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all text-center group"
+        >
+          <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+            <ReceiptText className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="font-headline font-bold text-lg text-on-surface">Gerçekleşen İşlem</h3>
+            <p className="text-xs text-on-surface-variant mt-1">Geçmiş veya anlık bir harcama/gelir ekleyin.</p>
+          </div>
+        </button>
+
+        <button 
+          onClick={() => onSelect('payment')}
+          className="bg-surface-container-low border border-outline-variant/30 p-6 rounded-3xl flex flex-col items-center justify-center gap-4 hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all text-center group"
+        >
+          <div className="w-16 h-16 bg-tertiary/10 rounded-2xl flex items-center justify-center text-tertiary group-hover:scale-110 transition-transform">
+            <CheckSquare className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="font-headline font-bold text-lg text-on-surface">Planlı Ödeme</h3>
+            <p className="text-xs text-on-surface-variant mt-1">Gelecekte ödenecek bir fatura veya plan kaydı oluşturun.</p>
+          </div>
+        </button>
+      </div>
+
+      <button 
+        onClick={onClose}
+        className="mt-6 font-bold text-on-surface-variant hover:text-error transition-colors px-6 py-3"
+      >
+        Vazgeç
+      </button>
+    </motion.div>
+  );
+};
+
+const AddTransactionScreen = ({ user, onComplete, onCancel, editData, duplicateData }: { 
+  user: User, 
+  onComplete: () => void,
+  onCancel: () => void,
+  editData?: Transaction | null,
+  duplicateData?: Transaction | null
+}) => {
+  const sourceData = editData || duplicateData;
+  
+  const [amount, setAmount] = useState(sourceData ? Math.abs(sourceData.amount).toString() : '');
+  const [title, setTitle] = useState(sourceData?.title || '');
+  const [type, setType] = useState<'income' | 'expense'>(sourceData?.type || 'expense');
+  const [category, setCategory] = useState(sourceData?.category || (sourceData?.type === 'income' ? INCOME_CATEGORIES[0].label : EXPENSE_CATEGORIES[0].label));
+  const [subCategory, setSubCategory] = useState(sourceData?.subCategory || '');
+  const [description, setDescription] = useState(sourceData?.description || '');
+  const [isRecurring, setIsRecurring] = useState(sourceData?.isRecurring || false);
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>(sourceData?.frequency || 'monthly');
+  const [startDate, setStartDate] = useState(
+    sourceData?.date ? (
+      sourceData.date instanceof Timestamp 
+        ? sourceData.date.toDate().toISOString().split('T')[0] 
+        : new Date(sourceData.date).toISOString().split('T')[0]
+    ) : new Date().toISOString().split('T')[0]
+  );
+  const [endDate, setEndDate] = useState(
+    sourceData?.endDate ? (
+      sourceData.endDate instanceof Timestamp 
+        ? sourceData.endDate.toDate().toISOString().split('T')[0] 
+        : new Date(sourceData.endDate).toISOString().split('T')[0]
+    ) : ''
+  );
+  const [useCustomRule, setUseCustomRule] = useState(!!sourceData?.customRule);
+  const [customWeekIndex, setCustomWeekIndex] = useState(sourceData?.customRule?.split(':')[0] || '1');
+  const [customWeekday, setCustomWeekday] = useState(sourceData?.customRule?.split(':')[1] || '1');
   const [loading, setLoading] = useState(false);
   const [showEndDateConfirm, setShowEndDateConfirm] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const handleSave = async () => {
     if (!amount || !title) return;
@@ -1271,34 +1574,44 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
 
     setLoading(true);
     const path = `users/${user.uid}/transactions`;
-    const customRule = useCustomRule ? `${customWeekIndex}:${customWeekday}` : null;
     const baseAmount = type === 'expense' ? -Math.abs(Number(amount)) : Math.abs(Number(amount));
-    const finalCategory = category === 'Fatura' && subCategory ? subCategory : category;
 
     try {
-      // Always add the current transaction
-      await addDoc(collection(db, path), {
+      const data: any = {
         userId: user.uid,
-        title: subCategory ? `${subCategory} Faturası` : title,
+        title,
         amount: baseAmount,
         type,
-        category,
+        category: category,
         subCategory: subCategory || null,
+        description,
         isRecurring: isRecurring,
+        frequency: isRecurring ? frequency : null,
+        startDate: isRecurring ? Timestamp.fromDate(new Date(startDate)) : null,
+        endDate: isRecurring && endDate ? Timestamp.fromDate(new Date(endDate)) : null,
+        customRule: isRecurring && useCustomRule ? `${customWeekIndex}:${customWeekday}` : null,
         date: Timestamp.fromDate(new Date(startDate)),
-        createdAt: Timestamp.now()
-      });
+        createdAt: editData ? (editData.createdAt || Timestamp.now()) : Timestamp.now()
+      };
 
-      // If recurring, also add to planned payments for reminders
-      if (isRecurring && type === 'expense') {
+      if (editData) {
+        await updateDoc(doc(db, path, editData.id), data);
+      } else {
+        await addDoc(collection(db, path), data);
+      }
+
+      // If recurring, also add to planned payments for reminders (only if it's new or duplicated)
+      if (!editData && isRecurring && type === 'expense') {
         const payPath = `users/${user.uid}/payments`;
         await addDoc(collection(db, payPath), {
           userId: user.uid,
-          title: subCategory ? `${subCategory} Faturası` : title,
+          title,
           amount: Math.abs(Number(amount)),
-          dueDate: startDate, // Next instance or starting from now
+          dueDate: startDate, 
           dueTime: '09:00',
-          category: finalCategory,
+          category: category,
+          subCategory: subCategory || null,
+          description,
           status: 'pending',
           reminders: [],
           isRecurring: true,
@@ -1307,7 +1620,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
       }
       onComplete();
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
+      handleFirestoreError(error, editData ? OperationType.UPDATE : OperationType.CREATE, path);
     } finally {
       setLoading(false);
     }
@@ -1320,6 +1633,15 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
       exit={{ opacity: 0, scale: 0.95 }}
       className="space-y-6 sm:space-y-10"
     >
+      <div className="flex items-center gap-4">
+        <button onClick={onCancel} className="p-2 rounded-full hover:bg-surface-container-low transition-colors">
+          <ChevronLeft className="w-6 h-6 text-primary" />
+        </button>
+        <h2 className="text-2xl font-headline font-extrabold text-primary tracking-tighter">
+          {editData ? 'İşlemi Düzenle' : duplicateData ? 'İşlemi Kopyala' : 'Yeni İşlem Ekle'}
+        </h2>
+      </div>
+
       {/* Type Toggle */}
       <div className="bg-surface-container-low p-1.5 rounded-2xl flex items-center gap-1 border border-outline-variant/30 relative">
         <button 
@@ -1327,6 +1649,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
             setType('expense');
             setCategory(EXPENSE_CATEGORIES[0].label);
             setSubCategory('');
+            setTitle(''); // Clear title when switching tabs
           }}
           className={cn(
             "relative z-10 flex-1 py-3 sm:py-4 px-6 rounded-xl font-headline font-bold text-sm transition-all duration-500",
@@ -1347,6 +1670,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
             setType('income');
             setCategory(INCOME_CATEGORIES[0].label);
             setSubCategory('');
+            setTitle(''); // Clear title when switching tabs
           }}
           className={cn(
             "relative z-10 flex-1 py-3 sm:py-4 px-6 rounded-xl font-headline font-bold text-sm transition-all duration-500",
@@ -1374,19 +1698,9 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
             placeholder="0,00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full max-w-[280px] bg-transparent border-none text-center font-headline text-5xl sm:text-6xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
+            className="w-full max-w-[280px] bg-transparent border-none text-center font-headline text-[40px] sm:text-6xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
           />
         </div>
-        {amount && Number(amount) > 1000 && type === 'expense' && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 p-3 bg-primary/5 rounded-2xl inline-flex items-center gap-2 border border-primary/10"
-          >
-            <HelpCircle className="w-4 h-4 text-primary" />
-            <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Bu harcama bütçenizi zorlayabilir mi?</span>
-          </motion.div>
-        )}
       </div>
 
       {/* Form Bento */}
@@ -1395,12 +1709,11 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
           <h3 className="text-[10px] font-bold text-on-surface-variant mb-1 flex items-center gap-2 uppercase tracking-wider pl-1">
             { (() => {
                 const activeCat = (type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(c => c.label === category);
-                const activeSubCat = BILL_SUB_CATEGORIES.find(s => s.label === subCategory);
-                const Icon = activeSubCat?.icon || activeCat?.icon || ShoppingBag;
+                const Icon = activeCat?.icon || ShoppingBag;
                 return <Icon className="w-4 h-4" />;
             })() } KATEGORİ
           </h3>
-          <div className="grid grid-cols-5 gap-y-0 gap-x-0">
+          <div className="flex gap-2.5 overflow-x-auto no-scrollbar snap-x pb-2 pt-1 -mx-2 px-2">
             {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => (
               <div 
                 key={cat.id} 
@@ -1408,20 +1721,20 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
                   setCategory(cat.label);
                   if (cat.label !== 'Fatura') setSubCategory('');
                 }}
-                className="flex flex-col items-center gap-0.5 cursor-pointer group scale-90 sm:scale-100"
+                className="flex flex-col items-center gap-1.5 cursor-pointer group shrink-0 w-[4.5rem] snap-center"
               >
                   <div className={cn(
-                    "w-11 h-11 rounded-xl flex items-center justify-center transition-all shadow-sm",
-                    category === cat.label ? "border-2 border-black" : "border border-outline-variant/20 hover:border-primary/30",
+                    "w-14 h-14 sm:w-16 sm:h-16 rounded-[1.25rem] flex items-center justify-center transition-all shadow-sm",
+                    category === cat.label ? "border-[2.5px] border-black dark:border-white shadow-md scale-105" : "border border-outline-variant/30 hover:border-primary/40",
                     "bg-surface-container-highest/20"
                   )}>
-                  <cat.icon className={cn(
-                    "w-5 h-5 transition-colors",
-                    CATEGORY_COLORS[cat.label]?.split(' ')[1] || "text-on-surface-variant"
-                  )} />
-                </div>
+                    <cat.icon className={cn(
+                      "w-6 h-6 sm:w-7 sm:h-7 transition-colors",
+                      CATEGORY_COLORS[cat.label]?.split(' ')[1] || "text-on-surface-variant"
+                    )} />
+                  </div>
                 <span className={cn(
-                  "text-[8px] font-bold text-center leading-tight truncate w-full px-0.5 mt-0.5", 
+                  "text-[9px] sm:text-[10px] font-bold text-center leading-tight truncate w-full px-1", 
                   category === cat.label ? "text-primary" : "text-on-surface-variant/80"
                 )}>
                   {cat.label}
@@ -1439,7 +1752,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
                 className="overflow-hidden border-t border-outline-variant/10 pt-1"
               >
                 <h4 className="text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-widest pl-1">FATURA ÇEŞİDİ</h4>
-                <div className="grid grid-cols-5 gap-x-0 gap-y-0">
+                <div className="flex gap-2.5 overflow-x-auto no-scrollbar snap-x pb-2 pt-1 -mx-2 px-2">
                   {BILL_SUB_CATEGORIES.map(sub => (
                     <button
                       key={sub.id}
@@ -1447,20 +1760,20 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
                         setSubCategory(sub.label);
                         setTitle(`${sub.label} Faturası`);
                       }}
-                      className="flex flex-col items-center gap-0.5 p-0.5 transition-all rounded-xl scale-90 sm:scale-100"
+                      className="flex flex-col items-center gap-1.5 p-0.5 transition-all rounded-xl shrink-0 w-[4.2rem] snap-center"
                     >
                       <div className={cn(
-                        "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
-                        subCategory === sub.label ? "border-2 border-black" : "border border-outline-variant/20",
+                        "w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center transition-colors shadow-sm",
+                        subCategory === sub.label ? "border-[2px] border-black dark:border-white shadow-md scale-105" : "border border-outline-variant/30 hover:border-primary/40",
                         "bg-surface-container-highest/20"
                       )}>
                         <sub.icon className={cn(
-                          "w-4 h-4",
+                          "w-5 h-5 sm:w-6 sm:h-6",
                           sub.color
                         )} />
                       </div>
                       <span className={cn(
-                        "text-[7px] font-bold text-center leading-tight mt-0.5",
+                        "text-[9px] sm:text-[10px] font-bold text-center leading-tight truncate w-full px-1",
                         subCategory === sub.label ? "text-primary" : "text-on-surface-variant/70"
                       )}>
                         {sub.label}
@@ -1475,28 +1788,16 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
 
         <div className="bg-surface-container-low rounded-[1.5rem] p-6">
           <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 flex items-center gap-2 uppercase tracking-wider">
-            <ReceiptText className="w-4 h-4" /> ÖDEME ADI
+            <ReceiptText className="w-4 h-4" /> {type === 'income' ? 'GELİR ADI' : 'ÖDEME ADI'}
           </h3>
           <div className="space-y-3">
             <input 
               type="text" 
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={(category === 'Kredi' || category === 'Kredi Kartı') ? "Banka veya kart adı girin..." : "Örn: Elektrik Faturası"}
+              placeholder={type === 'income' ? "Örn: Maaş, Satış, Bonus..." : "Örn: Kira, Fatura, Kredi..."}
               className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
             />
-            
-            {category === 'Fatura' && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Son Ödeme Tarihi</label>
-                <input 
-                  type="date" 
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
-                />
-              </div>
-            )}
             
             {(category === 'Kredi' || category === 'Kredi Kartı') && (
               <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -1512,6 +1813,40 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
               </div>
             )}
           </div>
+        </div>
+
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 flex items-center gap-2 uppercase tracking-wider pl-1">
+            <Calendar className="w-4 h-4" /> TARİH SEÇİMİ
+          </h3>
+          <div 
+            onClick={() => setShowDatePicker(true)}
+            className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-bold p-4 text-base focus:ring-0 shadow-sm cursor-pointer hover:bg-primary/5 transition-colors flex justify-between items-center"
+          >
+            {startDate.split('-').reverse().join('/')}
+            <Calendar className="w-4 h-4 opacity-40" />
+          </div>
+          
+          <DatePickerModal 
+            isOpen={showDatePicker}
+            onClose={() => setShowDatePicker(false)}
+            value={startDate}
+            onChange={setStartDate}
+            title={type === 'income' ? "Gelir Tarihi" : "İşlem Tarihi"}
+          />
+        </div>
+
+        <div className="bg-surface-container-low rounded-3xl p-6 border border-outline-variant/30">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 flex items-center gap-2 uppercase tracking-wider pl-1">
+            <FileText className="w-4 h-4" /> AÇIKLAMA (NOTLAR)
+          </h3>
+          <textarea 
+            placeholder="İşlemle ilgili notlarınızı buraya yazabilirsiniz..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            className="w-full bg-surface-container-lowest rounded-xl border-none text-on-surface font-medium p-4 text-sm focus:ring-0 shadow-sm resize-none"
+          />
         </div>
 
         {type === 'expense' && (
@@ -1555,16 +1890,6 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
                     </button>
                   ))}
                 </div>
-                
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Ödeme Tarihi</label>
-                  <input 
-                    type="date" 
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
-                  />
-                </div>
               </div>
             )}
           </div>
@@ -1574,12 +1899,12 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
       <button 
         onClick={handleSave}
         disabled={loading || !amount || !title}
-        className="w-full wealth-gradient text-white py-5 rounded-full font-headline font-bold text-lg shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+        className="w-full wealth-gradient text-white py-3.5 rounded-full font-headline font-bold text-base shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
       >
         {loading ? 'Kaydediliyor...' : (
           <>
             <CheckCircle2 className="w-6 h-6" />
-            İşlemi Kaydet
+            {editData ? 'Güncelle' : (duplicateData ? 'Kopyasını Kaydet' : 'İşlemi Kaydet')}
           </>
         )}
       </button>
@@ -1637,51 +1962,50 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
   );
 };
 
-const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => void }) => {
-  const [amount, setAmount] = useState('');
-  const [title, setTitle] = useState('');
-  const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dueTime, setDueTime] = useState('09:00');
-  const [category, setCategory] = useState('Fatura');
-  const [subCategory, setSubCategory] = useState('');
-  const [isRecurring, setIsRecurring] = useState(false);
+const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User, onComplete: () => void, onCancel: () => void, editData?: Payment | null }) => {
+  const [amount, setAmount] = useState(editData?.amount?.toString() || '');
+  const [title, setTitle] = useState(editData?.title || '');
+  const [dueDate, setDueDate] = useState(editData?.dueDate || new Date().toISOString().split('T')[0]);
+  const [dueTime, setDueTime] = useState(editData?.dueTime || '09:00');
+  const [category, setCategory] = useState(editData?.category || 'Fatura');
+  const [subCategory, setSubCategory] = useState(editData?.subCategory || '');
+  const [description, setDescription] = useState(editData?.description || '');
+  const [isRecurring, setIsRecurring] = useState(editData?.isRecurring || false);
   const [loading, setLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const handleSave = async () => {
     if (!amount || !title) return;
     setLoading(true);
-    const finalCategory = category === 'Fatura' && subCategory ? subCategory : category;
     const path = `users/${user.uid}/payments`;
     try {
-      await addDoc(collection(db, path), {
+      const data: any = {
         userId: user.uid,
         title,
         amount: Number(amount),
         dueDate,
         dueTime,
-        category: finalCategory,
-        status: 'pending',
-        reminders: [],
-        isRecurring: isRecurring || category === 'Abonelik',
-        createdAt: Timestamp.now()
-      });
+        category,
+        subCategory: subCategory || null,
+        description,
+        status: editData?.status || 'pending',
+        reminders: editData?.reminders || [],
+        isRecurring,
+        createdAt: editData?.createdAt || Timestamp.now()
+      };
+
+      if (editData) {
+        await updateDoc(doc(db, path, editData.id), data);
+      } else {
+        await addDoc(collection(db, path), data);
+      }
       onComplete();
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
+      handleFirestoreError(error, editData ? OperationType.UPDATE : OperationType.CREATE, path);
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (category === 'Fatura' && subCategory) {
-      setTitle(`${subCategory} Faturası`);
-    } else if (category === 'Kira') {
-      setTitle('Ev Kirası');
-    } else if (category === 'Abonelik') {
-      setTitle('Dijital Abonelik');
-    }
-  }, [category, subCategory]);
 
   return (
     <motion.div 
@@ -1691,10 +2015,12 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
       className="space-y-10"
     >
       <div className="flex items-center gap-4">
-        <button onClick={onComplete} className="p-2 rounded-full hover:bg-surface-container-low">
+        <button onClick={onCancel} className="p-2 rounded-full hover:bg-surface-container-low transition-colors">
           <ChevronLeft className="w-6 h-6 text-primary" />
         </button>
-        <h2 className="text-2xl font-headline font-extrabold text-primary tracking-tighter">Yeni Ödeme Ekle</h2>
+        <h2 className="text-2xl font-headline font-extrabold text-primary tracking-tighter">
+          {editData ? 'Ödemeyi Düzenle' : 'Yeni Ödeme Ekle'}
+        </h2>
       </div>
 
       <div className="text-center">
@@ -1706,7 +2032,7 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
             placeholder="0,00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full max-w-[200px] bg-transparent border-none text-center font-headline text-4xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
+            className="w-full max-w-[200px] bg-transparent border-none text-center font-headline text-[40px] font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
           />
         </div>
       </div>
@@ -1724,11 +2050,10 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
               className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm"
             >
               <option value="Fatura">Fatura</option>
+              <option value="Abonelik">Abonelik</option>
               <option value="Kredi">Kredi Ödemesi</option>
               <option value="Kredi Kartı">Kredi Kartı Borcu</option>
               <option value="Kira">Kira</option>
-              <option value="Abonelik">Abonelik</option>
-              <option value="Market">Market</option>
               <option value="Diğer">Diğer</option>
             </select>
             
@@ -1784,526 +2109,44 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
           />
         </div>
 
-        <div className="bg-surface-container-low rounded-[1.5rem] p-6">
-          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">SON GÜN</h3>
-          <input 
-            type="date" 
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">AÇIKLAMA</h3>
+          <textarea 
+            placeholder="Ödeme ile ilgili notlarınızı buraya yazabilirsiniz..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            className="w-full bg-surface-container-lowest rounded-xl border-none text-on-surface font-medium p-3 text-sm focus:ring-0 shadow-sm resize-none"
           />
         </div>
 
-        <div className="bg-surface-container-low rounded-[1.5rem] p-6">
-          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">ÖDEME SAATİ</h3>
-          <input 
-            type="time" 
-            value={dueTime}
-            onChange={(e) => setDueTime(e.target.value)}
-            className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
-          />
-        </div>
-
-        <div className="bg-surface-container-low rounded-[1.5rem] p-6">
-          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">AYARLAR</h3>
-          <button 
-            type="button"
-            onClick={() => setIsRecurring(!isRecurring)}
-            className={cn(
-              "w-full p-4 rounded-2xl flex items-center justify-between transition-all font-bold text-sm",
-              isRecurring || category === 'Abonelik' ? "bg-primary/10 text-primary border border-primary/20" : "bg-surface-container-lowest text-outline border border-outline-variant/10"
-            )}
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6 col-span-full">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">SON ÖDEME TARİHİ</h3>
+          <div 
+            onClick={() => setShowDatePicker(true)}
+            className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-bold p-4 text-base focus:ring-0 shadow-sm cursor-pointer hover:bg-primary/5 transition-colors flex justify-between items-center"
           >
-            <div className="flex items-center gap-2">
-              <Repeat className={cn("w-4 h-4", (isRecurring || category === 'Abonelik') && "text-primary")} />
-              <span>Abonelik mi?</span>
-            </div>
-            <div className={cn(
-              "w-10 h-6 rounded-full relative transition-colors p-1",
-              isRecurring || category === 'Abonelik' ? "bg-primary" : "bg-surface-container-high"
-            )}>
-              <motion.div 
-                animate={{ x: isRecurring || category === 'Abonelik' ? 16 : 0 }}
-                className="w-4 h-4 bg-white rounded-full shadow-sm"
-              />
-            </div>
-          </button>
-          <p className="text-[9px] text-on-surface-variant mt-2 px-1 font-medium leading-relaxed italic opacity-80">
-            * İşaretlerseniz 'Abonelikler' sekmesinde gösterilir.
-          </p>
+            {dueDate.split('-').reverse().join('/')}
+            <Calendar className="w-5 h-5 opacity-40" />
+          </div>
+
+          <DatePickerModal 
+            isOpen={showDatePicker}
+            onClose={() => setShowDatePicker(false)}
+            value={dueDate}
+            onChange={setDueDate}
+            title="Son Ödeme Tarihi"
+          />
         </div>
       </div>
 
       <button 
         onClick={handleSave}
         disabled={loading || !amount || !title}
-        className="w-full wealth-gradient text-white py-5 rounded-full font-headline font-bold text-lg shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+        className="w-full wealth-gradient text-white py-3.5 rounded-full font-headline font-bold text-base shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
       >
-        {loading ? 'Kaydediliyor...' : 'Ödemeyi Kaydet'}
+        {loading ? 'Kaydediliyor...' : (editData ? 'Güncelle' : 'Ödemeyi Kaydet')}
       </button>
-    </motion.div>
-  );
-};
-
-const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments: Payment[], onAddPayment: () => void }) => {
-  const totalPending = payments.filter(p => p.status !== 'paid').reduce((acc, p) => acc + p.amount, 0);
-  const activeRemindersCount = payments.filter(p => (p.reminders && p.reminders.length > 0) || (p.reminderTime && p.reminderTime !== 'none')).length;
-  const [reminderBillId, setReminderBillId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
-
-  const currentMonth = currentDate.getMonth();
-  const currentYear = currentDate.getFullYear();
-
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 is Sunday, 1 is Monday
-
-  const prevMonth = () => {
-    const d = new Date(currentDate);
-    d.setMonth(d.getMonth() - 1);
-    setCurrentDate(d);
-  };
-
-  const nextMonth = () => {
-    const d = new Date(currentDate);
-    d.setMonth(d.getMonth() + 1);
-    setCurrentDate(d);
-  };
-
-  const monthLabels = [
-    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 
-    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
-  ];
-
-  const filteredPayments = useMemo(() => {
-    let filtered = [...payments];
-    
-    if (selectedDate) {
-      filtered = filtered.filter(p => {
-        const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate().toISOString().split('T')[0] : p.dueDate;
-        return pDate === selectedDate;
-      });
-    } else {
-      // If no day selected, maybe show all pending for the current month
-      filtered = filtered.filter(p => {
-        const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
-        return pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear;
-      });
-    }
-
-    return filtered;
-  }, [payments, selectedDate, currentMonth, currentYear]);
-
-  const groupedPayments = useMemo(() => {
-    return filteredPayments.reduce((acc, bill) => {
-      const cat = bill.category || 'Diğer';
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(bill);
-      return acc;
-    }, {} as Record<string, Payment[]>);
-  }, [payments]);
-
-  const handleSetReminder = async (billId: string, time: string) => {
-    const path = `users/${user.uid}/payments/${billId}`;
-    try {
-      await updateDoc(doc(db, path), {
-        reminderTime: time
-      });
-      setReminderBillId(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
-  };
-
-  const handleMarkAsPaid = async (billId: string) => {
-    const bill = payments.find(p => p.id === billId);
-    if (!bill) return;
-
-    const path = `users/${user.uid}/payments/${billId}`;
-    const txPath = `users/${user.uid}/transactions`;
-    try {
-      await updateDoc(doc(db, path), { status: 'paid' });
-      
-      // Add as transaction
-      await addDoc(collection(db, txPath), {
-        userId: user.uid,
-        title: bill.title,
-        amount: -Math.abs(bill.amount),
-        type: 'expense',
-        category: bill.category,
-        date: Timestamp.now(),
-        createdAt: Timestamp.now(),
-        paymentId: billId // Reference to source payment
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
-  };
-
-  const handleDeletePayment = async (billId: string) => {
-    const path = `users/${user.uid}/payments/${billId}`;
-    try {
-      await deleteDoc(doc(db, path));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const handleUpdatePayment = async (updatedBill: any) => {
-    if (!editingPayment) return;
-    const path = `users/${user.uid}/payments/${editingPayment.id}`;
-    const txPath = `users/${user.uid}/transactions`;
-    
-    try {
-      const wasNotPaid = editingPayment.status !== 'paid';
-      const isNowPaid = updatedBill.status === 'paid';
-
-      await updateDoc(doc(db, path), updatedBill);
-
-      // If status changed to paid, create a transaction
-      if (wasNotPaid && isNowPaid) {
-        await addDoc(collection(db, txPath), {
-          userId: user.uid,
-          title: editingPayment.title,
-          amount: -Math.abs(updatedBill.amount || editingPayment.amount),
-          type: 'expense',
-          category: editingPayment.category,
-          date: Timestamp.now(),
-          createdAt: Timestamp.now(),
-          paymentId: editingPayment.id
-        });
-      }
-
-      setEditingPayment(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
-  };
-
-  const REMINDER_OPTIONS = [
-    { value: '1_hour_before', label: '1 Saat Önce', type: 'time' },
-    { value: '2_hours_before', label: '2 Saat Önce', type: 'time' },
-    { value: '1_day_before', label: '1 Gün Önce', type: 'day' },
-    { value: '2_days_before', label: '2 Gün Önce', type: 'day' },
-  ];
-
-  const renderBillCard = (bill: Payment) => {
-    // Determine category and icon directly from bill.category
-    const Icon = CATEGORY_ICONS[bill.category] || FileText;
-    const categoryColor = CATEGORY_COLORS[bill.category] || "bg-primary/10 text-primary";
-    
-    const isEditingReminder = reminderBillId === bill.id;
-    const currentReminders = bill.reminders || (bill.reminderTime && bill.reminderTime !== 'none' ? [bill.reminderTime] : []);
-
-    const handleToggleReminder = async (billId: string, optionValue: string) => {
-      const path = `users/${user.uid}/payments/${billId}`;
-      let newReminders = [...currentReminders];
-      if (newReminders.includes(optionValue)) {
-        newReminders = newReminders.filter(r => r !== optionValue);
-      } else {
-        newReminders.push(optionValue);
-      }
-      
-      try {
-        await updateDoc(doc(db, path), {
-          reminders: newReminders,
-          reminderTime: newReminders.length > 0 ? newReminders[0] : 'none' // Backwards compatibility
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, path);
-      }
-    };
-
-    const formatDate = (date: any) => {
-      try {
-        let dateStr = '';
-        if (date instanceof Timestamp) dateStr = date.toDate().toISOString().split('T')[0];
-        else if (date instanceof Date) dateStr = date.toISOString().split('T')[0];
-        else dateStr = String(date);
-        
-        const parts = dateStr.split('-');
-        if (parts.length !== 3) return dateStr;
-        return `${parts[2]}/${parts[1]}/${parts[0]}`;
-      } catch (e) {
-        return String(date);
-      }
-    };
-
-    return (
-      <motion.div 
-        key={bill.id}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-surface-container-low p-3 sm:p-4 rounded-[1.25rem] flex flex-col gap-3 sm:gap-4 group hover:shadow-md transition-all shadow-sm relative overflow-hidden border border-outline-variant/50"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className={cn(
-              "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0 shadow-sm border group-hover:scale-105 transition-transform",
-              categoryColor
-            )}>
-              <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2.5} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="font-bold text-on-surface text-sm sm:text-sm truncate leading-tight line-clamp-1">{bill.title}</h4>
-              <p className="text-[9px] sm:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest opacity-80 mt-0.5 truncate">
-                Son Gün: {formatDate(bill.dueDate)}
-              </p>
-            </div>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="font-headline font-extrabold text-sm sm:text-[15px] text-primary data-value tracking-tight">₺{bill.amount.toLocaleString('tr-TR')}</p>
-            <div className="flex flex-col items-end gap-1 mt-0.5">
-              <span className={cn(
-                "text-[7px] sm:text-[8px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-md",
-                bill.status === 'pending' ? "bg-error/10 text-error" : 
-                bill.status === 'paid' ? "bg-tertiary/10 text-tertiary" : "bg-primary/10 text-primary"
-              )}>
-                {bill.status === 'pending' ? 'BEKLİYOR' : 
-                 bill.status === 'paid' ? 'ÖDENDİ' : 'OTOMATİK'}
-              </span>
-              {bill.status === 'pending' && (
-                <button 
-                  onClick={() => handleMarkAsPaid(bill.id)}
-                  className="text-[9px] font-extrabold text-tertiary hover:scale-105 transition-transform uppercase tracking-tighter mt-0.5"
-                >
-                  ÖDE
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-3 border-t border-outline-variant/10">
-          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-            <div className="relative shrink-0">
-              <Bell className={cn("w-4 h-4 sm:w-5 sm:h-5 transition-all", currentReminders.length > 0 ? "text-primary fill-primary/20" : "text-outline opacity-40")} />
-              {currentReminders.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(0,23,54,0.5)]" />
-              )}
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className={cn(
-                "text-[9px] sm:text-[10px] font-bold uppercase tracking-widest truncate",
-                currentReminders.length > 0 ? "text-primary" : "text-outline opacity-40"
-              )}>
-                Hatırlatıcılar
-              </span>
-              <span className={cn(
-                "text-[11px] sm:text-xs font-bold transition-all truncate",
-                currentReminders.length > 0 ? "text-primary" : "text-on-surface-variant opacity-40"
-              )}>
-                {currentReminders.length > 0 
-                  ? `${currentReminders.length} Adet Aktif` 
-                  : 'Ayarlanmadı'}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button 
-              onClick={() => setEditingPayment(bill)}
-              className="p-2 text-outline hover:text-primary transition-colors rounded-lg sm:rounded-xl hover:bg-primary/5"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => handleDeletePayment(bill.id)}
-              className="p-2 text-outline hover:text-error transition-colors rounded-lg sm:rounded-xl hover:bg-error/5"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => setReminderBillId(isEditingReminder ? null : bill.id)}
-              className={cn(
-                "px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold transition-all shadow-sm",
-                isEditingReminder ? "bg-surface-container-high text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
-              )}
-            >
-              {isEditingReminder ? 'Kapat' : 'Ayarlar'}
-            </button>
-          </div>
-        </div>
-
-      {isEditingReminder && (
-        <ReminderSettingsModal 
-          bill={bill} 
-          currentReminders={currentReminders} 
-          handleToggleReminder={handleToggleReminder}
-          onClose={() => setReminderBillId(null)}
-        />
-      )}
-
-      {editingPayment && (
-        <EditPaymentModal 
-          payment={editingPayment} 
-          onSave={handleUpdatePayment} 
-          onClose={() => setEditingPayment(null)} 
-        />
-      )}
-    </motion.div>
-  );
-};
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="space-y-8"
-    >
-      {/* Total Pending Hero */}
-      <section className="relative overflow-hidden rounded-3xl p-8 wealth-gradient text-white shadow-xl">
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div>
-            <p className="text-on-primary-container text-xs font-semibold uppercase tracking-wider opacity-80">Toplam Bekleyen</p>
-            <h2 className="font-headline text-4xl md:text-5xl font-bold mt-2 tracking-tight">
-              ₺{totalPending.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-            </h2>
-            {activeRemindersCount > 0 && (
-              <div className="flex items-center gap-2 mt-4 bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-sm border border-white/10">
-                <Bell className="w-3 h-3 fill-white/20" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">{activeRemindersCount} Aktif Hatırlatıcı</span>
-              </div>
-            )}
-          </div>
-          <button 
-            onClick={onAddPayment}
-            className="bg-surface text-primary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 active:scale-95 duration-200 shadow-sm hover:bg-surface-container-low transition-colors text-sm border border-outline-variant/30"
-          >
-            <Plus className="w-4.5 h-4.5" />
-            Ödeme Ekle
-          </button>
-        </div>
-      </section>
-
-      {/* Calendar & Bills */}
-      <div className="flex flex-col lg:flex-row gap-8">
-        <div className="bg-surface-container-low rounded-3xl p-6 lg:w-[380px] shrink-0 border border-outline-variant/50 h-fit">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-headline text-lg font-bold text-primary">Ödeme Takvimi</h3>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={prevMonth}
-                className="p-1.5 hover:bg-surface-container-high rounded-full transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4 text-outline" />
-              </button>
-              <span className="text-xs font-bold min-w-[80px] text-center">
-                {monthLabels[currentMonth]} {currentYear}
-              </span>
-              <button 
-                onClick={nextMonth}
-                className="p-1.5 hover:bg-surface-container-high rounded-full transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 text-outline" />
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-outline uppercase tracking-wider mb-2">
-            {['Pz', 'Pt', 'Sa', 'Çr', 'Pş', 'Cu', 'Ct'].map(d => <div key={d}>{d}</div>)}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={i} className="h-8 sm:h-10"></div>)}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const formattedDate = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-              const dayPayments = payments.filter(p => {
-                const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate().toISOString().split('T')[0] : p.dueDate;
-                return pDate === formattedDate && p.status !== 'paid';
-              });
-              const today = new Date();
-              const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
-              const isSelected = selectedDate === formattedDate;
-
-              return (
-                <div 
-                  key={day} 
-                  onClick={() => setSelectedDate(isSelected ? null : formattedDate)}
-                  className={cn(
-                    "h-8 sm:h-10 flex flex-col items-center justify-center rounded-lg sm:rounded-xl text-xs font-bold transition-all relative border cursor-pointer",
-                    isSelected ? "bg-primary text-surface shadow-md border-primary" : 
-                    isToday ? "bg-primary/10 text-primary border-primary/20" : 
-                    "hover:bg-surface-container-high bg-surface-container-lowest border-transparent"
-                  )}
-                >
-                  <span className={cn(isSelected ? "text-surface" : isToday ? "text-primary" : "text-on-surface")}>{day}</span>
-                  {dayPayments.length > 0 && (
-                    <div className="flex gap-0.5 mt-0.5">
-                      {dayPayments.slice(0, 3).map((p, idx) => (
-                        <div key={idx} className={cn("w-1 h-1 rounded-full", isSelected ? "bg-surface" : "bg-primary shadow-sm")}></div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {selectedDate && (
-            <button 
-              onClick={() => setSelectedDate(null)}
-              className="w-full mt-4 py-2 text-[10px] font-bold text-primary uppercase tracking-widest hover:bg-primary/5 rounded-xl transition-all"
-            >
-              Filtreyi Temizle
-            </button>
-          )}
-        </div>
-
-        <section className="space-y-4 flex-1">
-          <div className="flex justify-between items-center px-2">
-            <h3 className="font-headline text-lg font-bold text-primary">
-              {selectedDate ? `${new Date(selectedDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} Ödemeleri` : 'Yaklaşan Faturalar'}
-            </h3>
-            <div className="bg-surface-container-low p-1 rounded-full flex gap-1">
-              <button 
-                onClick={() => setViewMode('list')}
-                className={cn(
-                  "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all",
-                  viewMode === 'list' ? "bg-primary text-surface shadow-sm" : "text-on-surface-variant hover:bg-surface-container-high"
-                )}
-              >
-                Liste
-              </button>
-              <button 
-                onClick={() => setViewMode('grouped')}
-                className={cn(
-                  "px-3 py-1.5 rounded-full text-[10px] font-bold transition-all",
-                  viewMode === 'grouped' ? "bg-primary text-surface shadow-sm" : "text-on-surface-variant hover:bg-surface-container-high"
-                )}
-              >
-                Kategori
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            {viewMode === 'list' ? (
-              <div className="space-y-3">
-                {filteredPayments.map(bill => renderBillCard(bill))}
-              </div>
-            ) : (
-              (Object.entries(groupedPayments) as [string, Payment[]][]).map(([category, categoryBills]) => (
-                <div key={category} className="space-y-3">
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="h-px flex-grow bg-outline-variant/20"></div>
-                    <h4 className="text-[10px] font-bold text-outline uppercase tracking-widest">{category}</h4>
-                    <div className="h-px flex-grow bg-outline-variant/20"></div>
-                  </div>
-                  <div className="space-y-3">
-                    {categoryBills.map(bill => renderBillCard(bill))}
-                  </div>
-                </div>
-              ))
-            )}
-            {filteredPayments.length === 0 && (
-              <div className="text-center py-10 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10">
-                <p className="text-on-surface-variant text-sm font-medium">Bu tarihte kayıtlı ödeme bulunmuyor.</p>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
     </motion.div>
   );
 };
@@ -2550,7 +2393,7 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
             </div>
           </div>
           <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
               <ReBarChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--outline-variant)" opacity={0.5} />
                 <XAxis 
@@ -2603,18 +2446,18 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
           </button>
         </div>
 
-        <div className="md:col-span-4 bg-surface-container-low rounded-3xl p-8 shadow-sm border border-outline-variant/50 flex flex-col justify-center">
-          <h3 className="font-headline text-xl font-bold mb-8 text-primary">Harcama Dağılımı</h3>
-          <div className="flex flex-col items-center gap-8">
-            <div className="w-48 h-48">
-              <ResponsiveContainer width="100%" height="100%">
+        <div className="md:col-span-4 bg-surface-container-low rounded-3xl p-6 shadow-sm border border-outline-variant/50 flex flex-col justify-center">
+          <h3 className="font-headline text-lg sm:text-xl font-bold mb-6 text-primary">Harcama Dağılımı</h3>
+          <div className="flex flex-row items-center gap-4 sm:gap-6">
+            <div className="w-28 h-28 sm:w-48 sm:h-48 shrink-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                 <RePieChart>
                   <Pie
                     data={pieData.length > 0 ? pieData : [{ name: 'Veri Yok', value: 100, color: 'var(--outline-variant)' }]}
                     cx="50%"
                     cy="50%"
-                    innerRadius={isDarkMode ? 55 : 60}
-                    outerRadius={80}
+                    innerRadius={isDarkMode ? "55%" : "60%"}
+                    outerRadius="85%"
                     paddingAngle={5}
                     dataKey="amount"
                     stroke="none"
@@ -2626,7 +2469,7 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
                 </RePieChart>
               </ResponsiveContainer>
             </div>
-            <div className="w-full space-y-2">
+            <div className="w-full flex-1 space-y-2">
               {pieData.slice(0, 4).map(item => (
                 <div key={item.name} className="flex items-center justify-between py-1 border-b border-outline-variant/10 last:border-0">
                   <div className="flex items-center gap-3">
@@ -2659,12 +2502,12 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
                 {filteredData.map((item) => {
-                  const Icon = CATEGORY_ICONS[item.category] || ShoppingBag;
+                  const Icon = (item.subCategory && CATEGORY_ICONS[item.subCategory]) || CATEGORY_ICONS[item.category] || ShoppingBag;
                   return (
                     <tr key={item.id} className={cn("hover:bg-surface-container-high transition-colors", item.isPlanned && "bg-primary/5")}>
                       <td className="py-4 px-2">
                         <p className="text-xs font-bold text-on-surface-variant">
-                          {item.date instanceof Timestamp ? item.date.toDate().toLocaleDateString('tr-TR') : typeof item.date === 'string' ? item.date : new Date(item.date).toLocaleDateString('tr-TR')}
+                          {item.date instanceof Timestamp ? item.date.toDate().toLocaleDateString('tr-TR') : typeof item.date === 'string' ? item.date.split('-').reverse().join('/') : new Date(item.date).toLocaleDateString('tr-TR')}
                         </p>
                       </td>
                       <td className="py-4 px-2">
@@ -2677,7 +2520,7 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
                           </div>
                           <div>
                             <p className="text-sm font-bold text-on-surface">{item.title}</p>
-                            <p className="text-[9px] font-bold text-on-surface-variant uppercase">{item.category}</p>
+                            <p className="text-[9px] font-bold text-on-surface-variant uppercase">{item.subCategory || item.category}</p>
                           </div>
                         </div>
                       </td>
@@ -2750,9 +2593,8 @@ const getNthWeekdayOfMonth = (year: number, month: number, weekIndex: string, we
   }
 };
 
-const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments: Payment[], onAddPayment: () => void }) => {
-  const [activeTab, setActiveTab] = useState<'pending' | 'subscriptions' | 'paid'>('pending');
-  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+const NewPaymentsScreen = ({ user, payments, onAddPayment, onEdit }: { user: User, payments: Payment[], onAddPayment: () => void, onEdit: (item: any) => void }) => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'paid'>('pending');
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const now = new Date();
@@ -2792,6 +2634,25 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
     }
   };
 
+  const handleUndoPaid = async (billId: string) => {
+    const bill = payments.find(p => p.id === billId);
+    if (!bill) return;
+
+    const path = `users/${user.uid}/payments/${billId}`;
+    const txPath = `users/${user.uid}/transactions`;
+    try {
+      await updateDoc(doc(db, path), { status: 'pending' });
+      
+      const q = query(collection(db, txPath), where('paymentId', '==', billId));
+      const querySnapshot = await getDocs(q);
+      
+      const deletePromises = querySnapshot.docs.map(document => deleteDoc(document.ref));
+      await Promise.all(deletePromises);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  };
+
   const handleDeletePayment = async () => {
     if (!deleteId) return;
     const path = `users/${user.uid}/payments/${deleteId}`;
@@ -2803,53 +2664,10 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
     }
   };
 
-  const handleUpdatePayment = async (updatedBill: any) => {
-    if (!editingPayment) return;
-    const path = `users/${user.uid}/payments/${editingPayment.id}`;
-    const txPath = `users/${user.uid}/transactions`;
-    
-    try {
-      const wasNotPaid = editingPayment.status !== 'paid';
-      const isNowPaid = updatedBill.status === 'paid';
-
-      await updateDoc(doc(db, path), updatedBill);
-
-      if (wasNotPaid && isNowPaid) {
-        await addDoc(collection(db, txPath), {
-          userId: user.uid,
-          title: editingPayment.title,
-          amount: -Math.abs(updatedBill.amount || editingPayment.amount),
-          type: 'expense',
-          category: editingPayment.category,
-          date: Timestamp.now(),
-          createdAt: Timestamp.now(),
-          paymentId: editingPayment.id
-        });
-      }
-      setEditingPayment(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
-  };
-
   const pendingBills = payments.filter(p => p.status !== 'paid');
-  const subscriptions = payments.filter(p => 
-    p.isRecurring || 
-    (p.title && (
-      p.title.toLowerCase().includes('netflix') || 
-      p.title.toLowerCase().includes('spotify') || 
-      p.title.toLowerCase().includes('youtube') || 
-      p.title.toLowerCase().includes('premium') ||
-      p.title.toLowerCase().includes('abonelik') ||
-      p.title.toLowerCase().includes('exxen') ||
-      p.title.toLowerCase().includes('amazon')
-    ))
-  );
-  
   const paidBills = payments.filter(p => p.status === 'paid');
 
   let activeList = pendingBills;
-  if (activeTab === 'subscriptions') activeList = subscriptions;
   if (activeTab === 'paid') activeList = paidBills;
 
   activeList.sort((a, b) => {
@@ -2859,9 +2677,9 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
   });
 
   const renderBillCard = (bill: Payment) => {
-    // Determine category and icon directly from bill.category
-    const Icon = CATEGORY_ICONS[bill.category] || FileText;
-    const categoryColor = CATEGORY_COLORS[bill.category] || "bg-primary/10 text-primary";
+    // Determine category and icon directly from bill.category and subCategory
+    const Icon = (bill.subCategory && CATEGORY_ICONS[bill.subCategory]) || CATEGORY_ICONS[bill.category] || FileText;
+    const categoryColor = (bill.subCategory && CATEGORY_COLORS[bill.subCategory]) || CATEGORY_COLORS[bill.category] || "bg-primary/10 text-primary";
     
     const formatDate = (date: any) => {
       try {
@@ -2886,43 +2704,83 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          "bg-surface-container-low p-3 sm:p-4 rounded-[20px] flex items-center justify-between gap-3 sm:gap-4 group transition-all border border-outline-variant/30",
-          isPaid ? "opacity-60 grayscale-[0.5]" : "hover:shadow-md"
+          "bg-surface-container-low p-4 sm:p-5 rounded-[24px] flex items-center justify-between gap-3 sm:gap-4 group transition-all border border-outline-variant/30 shadow-sm overflow-hidden relative",
+          isPaid ? "opacity-75" : "hover:shadow-md"
         )}
+        style={{ borderLeft: `6px solid ${getBorderColorValue(categoryColor)}` }}
       >
-        <button 
-          onClick={!isPaid ? () => handleMarkAsPaid(bill.id) : undefined}
-          disabled={isPaid}
-          className={cn(
-            "w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors",
-            isPaid ? "bg-tertiary border-tertiary text-surface" : "border-outline-variant hover:border-primary cursor-pointer text-transparent hover:bg-primary/5"
-          )}
-        >
-          <CheckSquare className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isPaid ? "text-surface" : "opacity-0")} />
-        </button>
-
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-1 min-w-0">
-          <div className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm border", categoryColor)}>
-            <Icon className="w-3.5 h-3.5" strokeWidth={2.5} />
+        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+          <div className={cn("w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm border", categoryColor)}>
+            <Icon className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className={cn("font-bold text-on-surface text-xs sm:text-sm truncate", isPaid && "line-through opacity-70")}>
+            <h4 className={cn("font-headline font-bold text-on-surface text-sm sm:text-base truncate", isPaid && "opacity-70")}>
               {bill.title}
             </h4>
-            <p className="text-[9px] sm:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest mt-0.5 truncate">
-              {formatDate(bill.dueDate)}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+              <p className="text-[10px] sm:text-[11px] text-on-surface-variant font-bold uppercase tracking-widest truncate">
+                {formatDate(bill.dueDate)}
+              </p>
+              {!isPaid && (
+                <p className={cn(
+                  "text-[10px] sm:text-[11px] font-bold uppercase tracking-widest truncate",
+                  (() => {
+                    const dDate = bill.dueDate instanceof Timestamp ? bill.dueDate.toDate() : new Date(bill.dueDate);
+                    dDate.setHours(23, 59, 59, 999);
+                    const n = new Date();
+                    n.setHours(0, 0, 0, 0);
+                    const diff = Math.ceil((dDate.getTime() - n.getTime()) / (1000 * 60 * 60 * 24));
+                    return diff < 0 ? "text-rose-500" : "text-primary";
+                  })()
+                )}>
+                  {(() => {
+                    const dDate = bill.dueDate instanceof Timestamp ? bill.dueDate.toDate() : new Date(bill.dueDate);
+                    dDate.setHours(23, 59, 59, 999);
+                    const n = new Date();
+                    n.setHours(0, 0, 0, 0);
+                    const diff = Math.ceil((dDate.getTime() - n.getTime()) / (1000 * 60 * 60 * 24));
+                    return diff === 0 ? 'Bugün' : diff < 0 ? `${Math.abs(diff)} Gün Gecikti` : `${diff} Gün Kaldı`;
+                  })()}
+                </p>
+              )}
+              {isPaid && (
+                <span className="flex items-center gap-0.5 text-[8px] font-extrabold text-tertiary bg-tertiary/10 px-1.5 py-0.5 rounded-full uppercase tracking-tighter">
+                  <CheckCircle2 className="w-2 h-2" />
+                  ÖDENDİ
+                </span>
+              )}
+            </div>
           </div>
         </div>
         
-        <div className="flex flex-col items-end shrink-0 gap-1">
-          <p className={cn("font-headline font-extrabold text-sm sm:text-[15px] tracking-tight", isPaid ? "text-on-surface-variant" : "text-primary")}>
-            ₺{bill.amount.toLocaleString('tr-TR')}
-          </p>
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => setEditingPayment(bill)} className="p-1 text-outline hover:text-primary rounded"><Search className="w-3.5 h-3.5" /></button>
-            <button onClick={() => setDeleteId(bill.id)} className="p-1 text-outline hover:text-error rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+        <div className="flex items-center gap-3 sm:gap-5">
+          <div className="flex flex-col items-end shrink-0">
+            <p className={cn("font-headline font-extrabold text-sm sm:text-lg tracking-tight leading-none", isPaid ? "text-on-surface-variant" : "text-primary")}>
+              ₺{bill.amount.toLocaleString('tr-TR')}
+            </p>
+            {!isPaid && (
+              <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => onEdit(bill)} className="p-1 text-outline hover:text-primary rounded" title="Düzenle"><Edit2 className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setDeleteId(bill.id)} className="p-1 text-outline hover:text-error rounded" title="Sil"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
           </div>
+
+          {!isPaid ? (
+            <button 
+              onClick={() => handleMarkAsPaid(bill.id)}
+              className="bg-primary text-surface px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all hover:bg-primary/90 shrink-0"
+            >
+              ÖDE
+            </button>
+          ) : (
+            <button 
+              onClick={() => handleUndoPaid(bill.id)}
+              className="bg-surface-container-highest text-on-surface-variant px-3 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest border border-outline-variant/30 active:scale-95 transition-all hover:bg-surface-container-high shrink-0"
+            >
+              GERİ AL
+            </button>
+          )}
         </div>
       </motion.div>
     );
@@ -2946,6 +2804,13 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
               ₺{upcomingNeeds.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
             </h2>
           </div>
+          <button 
+            onClick={onAddPayment}
+            className="flex items-center justify-center gap-2 bg-primary text-surface px-5 py-3 rounded-xl font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all hover:bg-primary/90 whitespace-nowrap"
+          >
+            <Plus className="w-5 h-5" />
+            Yeni Ekle
+          </button>
         </div>
       </section>
 
@@ -2953,19 +2818,13 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
         <div className="flex gap-1.5 sm:gap-2 p-1.5 bg-surface-container-low rounded-[18px] mb-4 sm:mb-6 border border-outline-variant/30 flex-wrap">
           <button 
             onClick={() => setActiveTab('pending')}
-            className={cn("flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[30%]", activeTab === 'pending' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
+            className={cn("flex-1 py-2.5 sm:py-3 px-4 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[40%]", activeTab === 'pending' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
           >
             Bekleyenler
           </button>
           <button 
-            onClick={() => setActiveTab('subscriptions')}
-            className={cn("flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[30%]", activeTab === 'subscriptions' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
-          >
-            Abonelikler
-          </button>
-          <button 
             onClick={() => setActiveTab('paid')}
-            className={cn("flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[30%]", activeTab === 'paid' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
+            className={cn("flex-1 py-2.5 sm:py-3 px-4 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[40%]", activeTab === 'paid' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
           >
             Ödenenler
           </button>
@@ -2991,14 +2850,6 @@ const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payme
         </div>
       </section>
 
-      {editingPayment && (
-        <EditPaymentModal 
-          payment={editingPayment} 
-          onSave={handleUpdatePayment} 
-          onClose={() => setEditingPayment(null)} 
-        />
-      )}
-
       {deleteId && (
         <ConfirmModal 
           title="Kaydı Sil"
@@ -3017,6 +2868,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [editingItem, setEditingItem] = useState<{item: any, type: 'transaction' | 'payment'} | null>(null);
+  const [duplicatingItem, setDuplicatingItem] = useState<{item: any, type: 'transaction' | 'payment'} | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved) return saved === 'dark';
@@ -3054,6 +2907,45 @@ export default function App() {
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications);
     if (!showNotifications) setShowMenu(false);
+  };
+
+  const handleDataRepair = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const txCollection = collection(db, `users/${user.uid}/transactions`);
+      const snapshot = await getDocs(txCollection);
+      
+      let fixedCount = 0;
+      const updates = snapshot.docs.map(async (docSnap) => {
+        const data = docSnap.data();
+        let needsUpdate = false;
+        const changes: any = {};
+
+        // Fix 1: Sync icons with categories if missing or generic
+        const expectedIcon = (data.subCategory && CATEGORY_ICONS[data.subCategory]) || CATEGORY_ICONS[data.category];
+        if (expectedIcon && (!data.icon || data.icon === 'ShoppingBag')) {
+          // If the record has a generic icon but we have a more specific one based on category/subCategory
+          changes.icon = expectedIcon.name || 'ShoppingBag'; 
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          await updateDoc(docSnap.ref, changes);
+          fixedCount++;
+        }
+      });
+
+      await Promise.all(updates);
+      
+      addNotification('Veri Onarımı Tamamlandı', `${fixedCount} adet kayıt başarıyla optimize edildi.`);
+      setShowNotifications(true);
+    } catch (error) {
+      console.error("Data repair failed:", error);
+    } finally {
+      setLoading(false);
+      setShowMenu(false);
+    }
   };
 
   const addNotification = (title: string, message: string) => {
@@ -3235,10 +3127,81 @@ export default function App() {
   const renderScreen = () => {
     switch (activeTab) {
       case 'home': return <HomeScreen user={user} transactions={transactions} payments={payments} setActiveTab={setActiveTab} />;
-      case 'transactions': return <TransactionsScreen user={user} transactions={transactions} payments={payments} />;
-      case 'add': return <AddTransactionScreen user={user} onComplete={() => setActiveTab('home')} />;
-      case 'payments': return <NewPaymentsScreen user={user} payments={payments} onAddPayment={() => setActiveTab('add_payment')} />;
-      case 'add_payment': return <AddPaymentScreen user={user} onComplete={() => setActiveTab('payments')} />;
+      case 'transactions': return (
+        <TransactionsScreen 
+          user={user} 
+          transactions={transactions} 
+          payments={payments} 
+          onEdit={(item: any) => {
+            setEditingItem({ item, type: 'transaction' });
+            setActiveTab('add_transaction');
+          }}
+          onDuplicate={(item: any) => {
+            setDuplicatingItem({ item, type: 'transaction' });
+            setActiveTab('add_transaction');
+          }}
+        />
+      );
+      case 'add': return (
+        <AddSelectionScreen 
+          onSelect={(type) => {
+            if (type === 'transaction') {
+              setEditingItem(null);
+              setDuplicatingItem(null);
+              setActiveTab('add_transaction');
+            } else {
+              setEditingItem(null);
+              setActiveTab('add_payment');
+            }
+          }}
+          onClose={() => setActiveTab('home')}
+        />
+      );
+      case 'add_transaction': return (
+        <AddTransactionScreen 
+          user={user} 
+          editData={editingItem?.type === 'transaction' ? editingItem.item : null}
+          duplicateData={duplicatingItem?.type === 'transaction' ? duplicatingItem.item : null}
+          onComplete={() => {
+            const wasEditing = editingItem?.type === 'transaction';
+            setEditingItem(null);
+            setDuplicatingItem(null);
+            setActiveTab(wasEditing ? 'transactions' : 'home');
+          }} 
+          onCancel={() => {
+            const wasEditing = editingItem?.type === 'transaction';
+            setEditingItem(null);
+            setDuplicatingItem(null);
+            setActiveTab(wasEditing ? 'transactions' : 'add');
+          }}
+        />
+      );
+      case 'payments': return (
+        <NewPaymentsScreen 
+          user={user} 
+          payments={payments} 
+          onAddPayment={() => setActiveTab('add_payment')}
+          onEdit={(item: any) => {
+            setEditingItem({ item, type: 'payment' });
+            setActiveTab('add_payment');
+          }}
+        />
+      );
+      case 'add_payment': return (
+        <AddPaymentScreen 
+          user={user} 
+          editData={editingItem?.type === 'payment' ? editingItem.item : null}
+          onComplete={() => {
+            setEditingItem(null);
+            setActiveTab('payments');
+          }} 
+          onCancel={() => {
+            const wasEditing = editingItem?.type === 'payment';
+            setEditingItem(null);
+            setActiveTab(wasEditing ? 'payments' : 'add');
+          }}
+        />
+      );
       case 'reports': return <ReportsScreen transactions={transactions} payments={payments} isDarkMode={isDarkMode} />;
       default: return <HomeScreen user={user} transactions={transactions} payments={payments} setActiveTab={setActiveTab} />;
     }
@@ -3362,6 +3325,12 @@ export default function App() {
                 </button>
                 <button className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-container-low transition-all text-sm font-bold text-on-surface border border-transparent hover:border-outline-variant/50">
                   <Settings className="w-5 h-5 text-primary" /> Genel Ayarlar
+                </button>
+                <button 
+                  onClick={handleDataRepair}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-container-low transition-all text-sm font-bold text-on-surface border border-transparent hover:border-outline-variant/50"
+                >
+                  <ShieldCheck className="w-5 h-5 text-tertiary" /> Verileri Optimize Et (Onar)
                 </button>
                 <button 
                   onClick={() => setIsDarkMode(!isDarkMode)}
