@@ -71,8 +71,14 @@
 }
 
 @layer base {
-  body {
+  html, body {
     @apply bg-surface text-on-surface font-sans antialiased selection:bg-primary/10;
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  
+  html::-webkit-scrollbar, body::-webkit-scrollbar {
+    display: none;
   }
   
   h1, h2, h3, h4, h5, h6 {

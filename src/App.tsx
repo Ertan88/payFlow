@@ -42,6 +42,8 @@ import {
   Flame,
   LayoutGrid,
   CreditCard,
+  CheckSquare,
+  ListChecks,
   PieChart as PieChartIcon,
   X,
   User as UserIcon,
@@ -50,6 +52,7 @@ import {
   Edit2,
   Landmark,
   Receipt,
+  FileText,
   Banknote,
   Coins
 } from 'lucide-react';
@@ -97,6 +100,7 @@ interface Transaction {
   date: any; // Firestore Timestamp or string
   amount: number;
   category: string;
+  subCategory?: string;
   type: 'income' | 'expense';
   icon: any;
   location?: string;
@@ -114,6 +118,7 @@ interface Payment {
   id: string;
   title: string;
   dueDate: any;
+  createdAt?: any;
   dueTime?: string; // HH:mm format
   amount: number;
   status: 'pending' | 'automatic' | 'paid';
@@ -121,18 +126,16 @@ interface Payment {
   icon: any;
   reminderTime?: string; // Legacy field
   reminders?: string[]; // Array of strings like '1_day_before', '2_hours_before', etc.
+  isRecurring?: boolean;
 }
 
 const CATEGORY_ICONS: Record<string, any> = {
-  'Market': ShoppingBag,
-  'Kira': Building2,
   'Maaş': Wallet,
-  'Ulaşım': Fuel,
-  'Yemek': Utensils,
+  'Kira': Building2,
   'Alışveriş': ShoppingBag,
   'Kredi': Landmark,
   'Kredi Kartı': CreditCard,
-  'Fatura': Receipt,
+  'Fatura': FileText,
   'Diğer': HelpCircle,
   'Ek Gelir': Coins,
   'Sabit Gider': ReceiptText,
@@ -141,8 +144,31 @@ const CATEGORY_ICONS: Record<string, any> = {
   'Doğalgaz': Flame,
   'İnternet': Wifi,
   'Telefon': Smartphone,
-  'TV/Yayın': Tv,
-  'Aidat': Building2,
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  // Gelir (Income)
+  'Maaş': 'bg-emerald-500/10 text-emerald-500',
+  'Ek Gelir': 'bg-indigo-500/10 text-indigo-500',
+  'Satış': 'bg-teal-500/10 text-teal-500',
+  'Bonus': 'bg-lime-500/10 text-lime-600',
+  
+  // Gider (Expense)
+  'Kredi': 'bg-violet-500/10 text-violet-500',
+  'Kredi Kartı': 'bg-fuchsia-500/10 text-fuchsia-500',
+  'Kira': 'bg-blue-600/10 text-blue-600',
+  'Alışveriş': 'bg-rose-500/10 text-rose-500',
+  'Sabit Gider': 'bg-slate-500/10 text-slate-500',
+  
+  // Alt Fatura/Ödeme Tipleri
+  'Fatura': 'bg-amber-500/10 text-amber-500',
+  'Elektrik': 'bg-yellow-500/10 text-yellow-600',
+  'Su': 'bg-cyan-500/10 text-cyan-500',
+  'Doğalgaz': 'bg-orange-600/10 text-orange-600',
+  'İnternet': 'bg-blue-500/10 text-blue-500',
+  'Telefon': 'bg-green-500/10 text-green-500',
+  
+  'Diğer': 'bg-zinc-500/10 text-zinc-500'
 };
 
 const BANK_OPTIONS = [
@@ -167,8 +193,6 @@ const BILL_SUB_CATEGORIES = [
   { id: 'Doğalgaz', label: 'Doğalgaz', icon: Flame, color: 'text-orange-600' },
   { id: 'İnternet', label: 'İnternet', icon: Wifi, color: 'text-indigo-500' },
   { id: 'Telefon', label: 'Telefon', icon: Smartphone, color: 'text-green-500' },
-  { id: 'TV/Yayın', label: 'TV/Yayın', icon: Tv, color: 'text-purple-500' },
-  { id: 'Aidat', label: 'Aidat', icon: Building2, color: 'text-rose-500' },
 ];
 
 const INCOME_CATEGORIES = [
@@ -180,14 +204,10 @@ const INCOME_CATEGORIES = [
 ];
 
 const EXPENSE_CATEGORIES = [
-  { id: 'exp-1', label: 'Fatura', icon: Receipt },
+  { id: 'exp-1', label: 'Fatura', icon: FileText },
   { id: 'exp-2', label: 'Kredi', icon: Landmark },
   { id: 'exp-3', label: 'Kredi Kartı', icon: CreditCard },
   { id: 'exp-4', label: 'Kira', icon: Building2 },
-  { id: 'exp-5', label: 'Market', icon: ShoppingBag },
-  { id: 'exp-6', label: 'Yemek', icon: Utensils },
-  { id: 'exp-7', label: 'Ulaşım', icon: Fuel },
-  { id: 'exp-8', label: 'Eğlence', icon: Flame },
   { id: 'exp-9', label: 'Diğer', icon: HelpCircle },
 ];
 
@@ -261,11 +281,11 @@ const TopBar = ({
           <div className="relative">
             <button 
               onClick={toggleNotifications}
-              className="p-2.5 rounded-full bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50 relative"
+              className="p-2 rounded-xl bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50 relative"
             >
-              <Bell className="w-5 h-5 text-primary" strokeWidth={2} />
+              <Bell className="w-4.5 h-4.5 text-primary" strokeWidth={2} />
               {notifications.some(n => !n.isRead) && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-surface animate-pulse"></span>
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-error rounded-full border-2 border-surface animate-pulse"></span>
               )}
             </button>
           </div>
@@ -273,9 +293,9 @@ const TopBar = ({
           <div className="relative">
             <button 
               onClick={toggleMenu}
-              className="p-2.5 rounded-full bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50"
+              className="p-2 rounded-xl bg-surface-container-low hover:bg-outline-variant/30 transition-all active:scale-95 duration-200 border border-outline-variant/50"
             >
-              <Settings className="w-5 h-5 text-primary" strokeWidth={2} />
+              <Settings className="w-4.5 h-4.5 text-primary" strokeWidth={2} />
             </button>
           </div>
         </div>
@@ -287,9 +307,9 @@ const TopBar = ({
 const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (tab: Tab) => void }) => {
   const tabs = [
     { id: 'home', label: 'Anasayfa', icon: LayoutGrid },
-    { id: 'transactions', label: 'İşlemler', icon: ReceiptText },
+    { id: 'transactions', label: 'Hareketler', icon: ReceiptText },
     { id: 'add', label: 'Ekle', icon: Plus, isCenter: true },
-    { id: 'payments', label: 'Ödemeler', icon: CreditCard },
+    { id: 'payments', label: 'Planlı', icon: CheckSquare },
     { id: 'reports', label: 'Raporlar', icon: PieChartIcon },
   ];
 
@@ -307,9 +327,9 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
               className={cn(
                 "relative flex flex-col items-center justify-center transition-all duration-300",
                 tab.isCenter 
-                  ? "w-12 h-12 -mt-10 bg-primary text-surface rounded-xl shadow-lg hover:scale-105 active:scale-95 z-10 border-4 border-surface" 
+                  ? "w-11 h-11 -mt-7 bg-primary rounded-xl shadow-lg hover:scale-105 active:scale-95 z-10 border-4 border-surface" 
                   : "flex-1 py-1.5 px-0.5 rounded-xl",
-                !tab.isCenter && isActive ? "text-primary" : "text-on-surface-variant hover:text-primary"
+                !tab.isCenter && (isActive ? "text-primary" : "text-on-surface-variant hover:text-primary")
               )}
             >
               {isActive && !tab.isCenter && (
@@ -323,7 +343,7 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
                 strokeWidth={isActive || tab.isCenter ? 2.5 : 2}
                 className={cn(
                   "transition-all duration-300",
-                  tab.isCenter ? "w-6 h-6" : "w-4 h-4 mb-0.5",
+                  tab.isCenter ? "w-5 h-5 text-surface" : "w-4 h-4 mb-0.5",
                   isActive && !tab.isCenter ? "scale-110" : "opacity-70"
                 )} 
               />
@@ -342,6 +362,177 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: Tab, onTabChange: (t
     </nav>
   );
 };
+
+// --- Components ---
+
+function ConfirmModal({ title, message, onConfirm, onCancel, confirmText = "Sil", cancelText = "Vazgeç", type = "danger" }: any) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        className="bg-surface rounded-[28px] sm:rounded-[32px] p-6 sm:p-8 w-full max-w-sm shadow-2xl border border-outline-variant/20"
+      >
+        <div className={cn(
+          "w-12 h-12 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl flex items-center justify-center mx-auto mb-4 sm:mb-6",
+          type === 'danger' ? "bg-error/10 text-error" : "bg-primary/10 text-primary"
+        )}>
+          {type === 'danger' ? <Trash2 className="w-6 h-6 sm:w-8 sm:h-8" /> : <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8" />}
+        </div>
+        
+        <h3 className="text-lg sm:text-xl font-headline font-extrabold text-center text-on-surface mb-1 sm:mb-2">{title}</h3>
+        <p className="text-on-surface-variant text-center text-[13px] sm:text-sm font-medium mb-6 sm:mb-8 leading-relaxed max-w-[240px] mx-auto">
+          {message}
+        </p>
+
+        <div className="flex flex-col gap-2.5 sm:gap-3">
+          <button 
+            onClick={onConfirm}
+            className={cn(
+              "w-full py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold font-headline shadow-lg active:scale-[0.98] transition-all text-sm sm:text-base",
+              type === 'danger' ? "bg-error text-white" : "wealth-gradient text-white"
+            )}
+          >
+            {confirmText}
+          </button>
+          <button 
+            onClick={onCancel}
+            className="w-full py-3 sm:py-4 text-on-surface-variant font-bold text-xs sm:text-sm hover:bg-surface-container-low rounded-xl sm:rounded-2xl transition-all"
+          >
+            {cancelText}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function EditPaymentModal({ payment, onSave, onClose }: any) {
+  const getInitialDate = (date: any) => {
+    if (date instanceof Timestamp) return date.toDate().toISOString().split('T')[0];
+    if (typeof date === 'string') return date;
+    try {
+      return new Date(date).toISOString().split('T')[0];
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const [amount, setAmount] = useState(payment.amount?.toString() || '0');
+  const [dueDate, setDueDate] = useState(getInitialDate(payment.dueDate));
+  const [status, setStatus] = useState(payment.status || 'pending');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary/40 backdrop-blur-md">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-surface rounded-[28px] sm:rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl space-y-5 sm:space-y-6 border border-outline-variant/30"
+      >
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg sm:text-xl font-headline font-bold text-primary">Ödemeyi Düzenle</h3>
+          <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
+            <X className="w-5 h-5 text-outline" />
+          </button>
+        </div>
+        
+        <div className="space-y-3 sm:space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1.5 sm:mb-2 px-1">TUTAR</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-primary">₺</span>
+              <input 
+                type="number" 
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full bg-surface-container-low p-3.5 sm:p-4 pl-8 rounded-xl sm:rounded-2xl border border-outline-variant/20 focus:border-primary transition-all font-bold text-primary text-base sm:text-lg"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1.5 sm:mb-2 px-1">TARİH</label>
+            <input 
+              type="date" 
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full bg-surface-container-low p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-outline-variant/20 focus:border-primary transition-all font-bold text-primary text-sm sm:text-base"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-1.5 sm:mb-2 px-1">DURUM</label>
+            <select 
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="w-full bg-surface-container-low p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-outline-variant/20 focus:border-primary transition-all font-bold text-primary appearance-none cursor-pointer text-sm sm:text-base"
+            >
+              <option value="pending">BEKLİYOR</option>
+              <option value="paid">ÖDENDİ</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-2.5 sm:gap-3 pt-1 sm:pt-2">
+          <button onClick={onClose} className="flex-1 py-3 sm:py-4 text-on-surface-variant text-xs sm:text-sm font-bold hover:bg-surface-container-low rounded-xl sm:rounded-2xl transition-all border border-transparent hover:border-outline-variant/20">Vazgeç</button>
+          <button 
+            onClick={() => onSave({ amount: Number(amount), dueDate, status })}
+            className="flex-1 wealth-gradient text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold font-headline shadow-lg active:scale-95 transition-all text-sm sm:text-base"
+          >
+            Güncelle
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function ReminderSettingsModal({ bill, currentReminders, handleToggleReminder, onClose }: any) {
+  const REMINDER_OPTIONS = [
+    { value: '1_hour_before', label: '1 Saat Önce' },
+    { value: '2_hours_before', label: '2 Saat Önce' },
+    { value: '1_day_before', label: '1 Gün Önce' },
+    { value: '2_days_before', label: '2 Gün Önce' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary/20 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-surface rounded-3xl p-8 w-full max-w-sm shadow-2xl space-y-6"
+      >
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-headline font-bold text-primary">Hatırlatıcı Ayarları</h3>
+          <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full">
+            <X className="w-5 h-5 text-on-surface-variant" />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {REMINDER_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => handleToggleReminder(bill.id, option.value)}
+              className={cn(
+                "px-4 py-3 rounded-2xl text-sm font-bold transition-all border flex items-center justify-between",
+                currentReminders.includes(option.value) 
+                  ? "bg-primary text-surface border-primary shadow-md" 
+                  : "bg-surface-container-low text-on-surface-variant border-outline-variant/10 hover:bg-surface-container-high"
+              )}
+            >
+              {option.label}
+              {currentReminders.includes(option.value) && <CheckCircle2 className="w-4 h-4" />}
+            </button>
+          ))}
+        </div>
+        <button 
+          onClick={onClose}
+          className="w-full wealth-gradient text-white py-4 rounded-2xl font-bold flex items-center justify-center"
+        >
+          Tamam
+        </button>
+      </motion.div>
+    </div>
+  );
+}
 
 // --- Screens ---
 
@@ -391,11 +582,42 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
     return actualExpense + pendingPaymentsInMonth;
   }, [currentMonthTransactions, payments, today]);
 
-  const [chartFilter, setChartFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const recentActivity = useMemo(() => {
+    const combined = [
+      ...transactions.map(tx => ({
+        id: tx.id,
+        title: tx.title,
+        amount: Math.abs(tx.amount), // ensure absolute, sign via type
+        type: tx.type,
+        category: tx.category,
+        date: tx.date,
+        createdAt: tx.createdAt instanceof Timestamp ? tx.createdAt.toDate().getTime() : (tx.date instanceof Timestamp ? tx.date.toDate().getTime() : new Date(tx.date).getTime()),
+        isRecurring: tx.isRecurring,
+        location: tx.location
+      })),
+      ...payments.map(p => ({
+        id: `payment-${p.id}`,
+        title: p.title,
+        amount: Math.abs(p.amount),
+        type: 'expense' as const,
+        category: p.category,
+        date: p.dueDate,
+        createdAt: p.createdAt instanceof Timestamp ? p.createdAt.toDate().getTime() : (p.dueDate instanceof Timestamp ? p.dueDate.toDate().getTime() : new Date(p.dueDate).getTime()),
+        isRecurring: false,
+        location: 'Ödeme' // or Fatura
+      }))
+    ];
+    
+    // Sort by createdAt descending (most recently entered first)
+    return combined.sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+  }, [transactions, payments]);
+
+  const [chartFilter, setChartFilter] = useState<'income' | 'expense'>('expense');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
   const pieData = useMemo(() => {
     const categories: Record<string, { name: string, value: number, color: string, count: number }> = {};
+    const BILL_CATEGORIES = ['Elektrik', 'Su', 'Doğalgaz', 'İnternet', 'Telefon', 'TV/Yayın', 'Aidat'];
     
     // Filter pending payments for the current month
     const pendingPaymentsInMonth = payments.filter(p => {
@@ -404,26 +626,10 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
       return pDate.getMonth() === today.getMonth() && pDate.getFullYear() === today.getFullYear();
     });
 
-    if (chartFilter === 'all') {
-      const incomeTotal = currentMonthTransactions.filter(tx => tx.type === 'income').reduce((acc, tx) => acc + tx.amount, 0);
-      
-      const expenseTotalTransactions = Math.abs(currentMonthTransactions.filter(tx => tx.type === 'expense').reduce((acc, tx) => acc + tx.amount, 0));
-      const expenseTotalPayments = pendingPaymentsInMonth.reduce((acc, p) => acc + p.amount, 0);
-      const expenseTotal = expenseTotalTransactions + expenseTotalPayments;
-      
-      const countIncome = currentMonthTransactions.filter(tx => tx.type === 'income').length;
-      const countExpense = currentMonthTransactions.filter(tx => tx.type === 'expense').length + pendingPaymentsInMonth.length;
-      
-      return [
-        { name: 'Gelirler', value: incomeTotal, color: '#10B981', count: countIncome },
-        { name: 'Giderler', value: expenseTotal, color: '#F43F5E', count: countExpense }
-      ].filter(d => d.value > 0);
-    }
-
     currentMonthTransactions.forEach(tx => {
       if (tx.type !== chartFilter) return;
       
-      const key = tx.category;
+      const key = BILL_CATEGORIES.includes(tx.category) ? 'Fatura' : tx.category;
       if (!categories[key]) {
         categories[key] = { 
           name: key, 
@@ -439,7 +645,8 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
     // Add pending payments to the distribution if not filtering for income
     if (chartFilter !== 'income') {
       pendingPaymentsInMonth.forEach(payment => {
-        const key = payment.category || 'Ödeme';
+        const rawCategory = payment.category || 'Ödeme';
+        const key = BILL_CATEGORIES.includes(rawCategory) ? 'Fatura' : rawCategory;
         if (!categories[key]) {
           categories[key] = { 
             name: key, 
@@ -453,16 +660,25 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
       });
     }
 
-    const palette = [
-      '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', 
-      '#8b5cf6', '#f43f5e', '#06b6d4', '#eab308'
+    const categoryPalette = [
+      '#6366f1', // Indigo
+      '#ec4899', // Pink
+      '#f59e0b', // Amber
+      '#10b981', // Emerald
+      '#3b82f6', // Blue
+      '#8b5cf6', // Violet
+      '#f43f5e', // Rose
+      '#06b6d4', // Cyan
+      '#eab308', // Yellow
+      '#14b8a6', // Teal
+      '#f97316'  // Orange
     ];
     
     return Object.values(categories)
       .sort((a, b) => b.value - a.value)
       .map((cat, i) => ({
         ...cat,
-        color: chartFilter === 'income' ? '#10B981' : palette[i % palette.length]
+        color: categoryPalette[i % categoryPalette.length]
       }));
   }, [currentMonthTransactions, payments, chartFilter, today]);
 
@@ -528,7 +744,7 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
               className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low border border-outline-variant/50 rounded-xl text-[10px] font-bold uppercase tracking-widest text-primary hover:bg-outline-variant/20 transition-all shadow-sm z-10"
             >
               <Filter className="w-2.5 h-2.5" />
-              {chartFilter === 'all' ? 'Tümü' : chartFilter === 'income' ? 'Gelirler' : 'Giderler'}
+              {chartFilter === 'income' ? 'Gelirler' : 'Giderler'}
             </button>
 
             <AnimatePresence>
@@ -543,7 +759,6 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
                   >
                     <div className="p-1">
                       {[
-                        { id: 'all', label: 'Tümü', icon: BarChart3 },
                         { id: 'income', label: 'Gelirler', icon: ArrowUp, color: 'text-tertiary' },
                         { id: 'expense', label: 'Giderler', icon: ArrowDown, color: 'text-error' }
                       ].map((option) => (
@@ -572,45 +787,37 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
 
         <div className="bg-surface-container-low rounded-3xl p-3 sm:p-5 border border-outline-variant/50 shadow-sm flex flex-row items-center gap-2 sm:gap-6">
           <div className="w-[120px] h-[120px] sm:w-[150px] sm:h-[150px] shrink-0 relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <RePieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius="65%"
-                  outerRadius="85%"
-                  paddingAngle={4}
-                  dataKey="value"
-                  animationBegin={0}
-                  animationDuration={800}
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'rgba(var(--surface), 0.95)', 
-                    borderRadius: '12px', 
-                    border: '1px solid rgba(var(--outline-variant), 0.5)',
-                    boxShadow: 'var(--shadow-xl)',
-                    fontSize: '10px',
-                    fontWeight: 'bold',
-                    padding: '8px'
-                  }}
-                />
-              </RePieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 z-10 overflow-hidden">
+            <div style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+                <RePieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="65%"
+                    outerRadius="85%"
+                    paddingAngle={4}
+                    minAngle={15}
+                    dataKey="value"
+                    animationBegin={0}
+                    animationDuration={800}
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                    ))}
+                  </Pie>
+                </RePieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 z-10 overflow-hidden bg-surface/50 sm:bg-transparent rounded-full backdrop-blur-[2px] sm:backdrop-blur-none m-4 sm:m-0">
               <p className="text-[7px] sm:text-[8px] font-bold text-outline uppercase tracking-widest leading-none mb-0.5">Toplam</p>
-              <p className="text-[9px] sm:text-[11px] font-bold font-headline text-primary w-full text-center truncate">
-                ₺{totalValue >= 10000 ? new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(totalValue) : totalValue.toLocaleString('tr-TR')}
+              <p className="text-[10px] sm:text-[12px] font-bold font-headline text-primary w-full text-center truncate">
+                ₺{totalValue.toLocaleString('tr-TR')}
               </p>
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col gap-1 overflow-y-auto no-scrollbar h-[110px] sm:h-[140px] pr-1">
+          <div className="flex-1 overflow-y-auto no-scrollbar h-[110px] sm:h-[140px] pr-1">
             {pieData.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full opacity-40">
                 <PieChartIcon className="w-5 h-5 mb-1" />
@@ -623,7 +830,7 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
                   initial={{ opacity: 0, x: 10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-surface border border-outline-variant/10 hover:border-outline-variant/30 transition-all group"
+                  className="flex items-center justify-between py-1.5 border-b border-outline-variant/10 last:border-0 hover:bg-surface-container-low px-1 transition-all group"
                 >
                   <div className="flex items-center gap-1.5 min-w-0 pr-2">
                     <div 
@@ -636,7 +843,7 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-[9px] sm:text-[10px] font-bold text-primary">
-                      ₺{item.value >= 10000 ? new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(item.value) : item.value.toLocaleString('tr-TR')}
+                      ₺{item.value.toLocaleString('tr-TR')}
                     </p>
                   </div>
                 </motion.div>
@@ -657,38 +864,39 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
             Tümünü Gör
           </button>
         </div>
-        <div className="space-y-3">
-          {transactions.slice(0, 3).map((tx, i) => {
+        <div className="space-y-2">
+          {recentActivity.map((tx, i) => {
             const Icon = CATEGORY_ICONS[tx.category] || ShoppingBag;
+            const categoryColor = CATEGORY_COLORS[tx.category] || (tx.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500");
             return (
               <motion.div 
                 key={tx.id}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-surface-container-low p-4 rounded-2xl flex items-center gap-4 transition-all hover:shadow-md group border border-outline-variant/50"
+                className="bg-surface-container-low p-2 sm:p-2 rounded-xl flex items-center gap-2 transition-all hover:shadow-md group border border-outline-variant/50"
               >
                 <div className={cn(
-                  "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30",
-                  tx.type === 'income' ? "bg-tertiary/10 text-tertiary" : "bg-primary/5 text-primary"
+                  "w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
+                  categoryColor
                 )}>
-                  <Icon className="w-5 h-5" strokeWidth={2} />
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2} />
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-headline font-semibold text-on-surface text-sm">{tx.title}</h4>
-                    {tx.isRecurring && <Repeat className="w-3 h-3 text-primary opacity-40" />}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="font-headline font-semibold text-on-surface text-xs sm:text-sm truncate leading-tight line-clamp-1">{tx.title}</h4>
+                    {tx.isRecurring && <Repeat className="w-2.5 h-2.5 text-primary opacity-40 shrink-0" />}
                   </div>
-                  <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
-                    {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : tx.date} • {tx.location || tx.category}
+                  <p className="text-[10px] text-on-surface-variant font-medium truncate mt-0.5">
+                    {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : tx.date}
                   </p>
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <p className={cn(
-                    "font-bold text-base data-value",
-                    tx.type === 'income' ? "text-tertiary" : "text-on-surface"
+                    "font-bold text-sm sm:text-[15px] data-value tracking-tight",
+                    tx.type === 'income' ? "text-emerald-500" : "text-rose-500"
                   )}>
-                    {tx.amount > 0 ? '+' : ''}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
+                    {tx.type === 'income' ? '+' : '-'}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
                   </p>
                 </div>
               </motion.div>
@@ -699,33 +907,82 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
 
       {/* Upcoming Payments */}
       <section className="space-y-4">
-        <h2 className="text-xl font-bold font-headline tracking-tight px-2">Yaklaşan Ödemeler</h2>
-        <div className="bg-surface-container-low rounded-3xl p-6 space-y-4 border border-outline-variant/50">
-          {payments.filter(p => p.status !== 'paid').length > 0 ? (
-            <div className="p-4 bg-surface rounded-2xl flex flex-col gap-3 shadow-sm border border-outline-variant/30">
-              <div className="flex justify-between items-start">
-                <span className="px-2 py-1 bg-primary text-surface text-[10px] font-bold rounded-md uppercase tracking-wider">
-                  {payments.filter(p => p.status !== 'paid')[0].category}
-                </span>
-                <span className="text-xs font-semibold text-on-surface-variant">
-                  Tarih: {payments.filter(p => p.status !== 'paid')[0].dueDate instanceof Timestamp ? (payments.filter(p => p.status !== 'paid')[0].dueDate as Timestamp).toDate().toLocaleDateString('tr-TR') : payments.filter(p => p.status !== 'paid')[0].dueDate}
-                </span>
-              </div>
-              <div>
-                <h4 className="font-bold text-lg">₺{payments.filter(p => p.status !== 'paid')[0].amount.toLocaleString('tr-TR')}</h4>
-                <p className="text-xs text-on-surface-variant">{payments.filter(p => p.status !== 'paid')[0].title}</p>
-              </div>
-              <button 
+        <div className="flex items-center justify-between px-2">
+          <h2 className="text-xl font-bold font-headline tracking-tight">Yaklaşan Ödemeler</h2>
+        </div>
+        <div className="space-y-2">
+          {payments.filter(p => {
+            if (p.status === 'paid') return false;
+            const dueDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+            dueDate.setHours(23, 59, 59, 999);
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+            
+            const diffTime = dueDate.getTime() - now.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            // Show only payments within the next 7 days, including today (diffDays >= 0 and <= 7)
+            return diffDays >= 0 && diffDays <= 7;
+          }).map((p, i) => {
+            const dueDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+            dueDate.setHours(23, 59, 59, 999);
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+            const diffTime = dueDate.getTime() - now.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            const subCat = BILL_SUB_CATEGORIES.find(s => s.label === p.title || p.title.toLowerCase().includes(s.label.toLowerCase()));
+            const pCategoryValue = subCat ? subCat.label : p.category;
+            const Icon = CATEGORY_ICONS[pCategoryValue] || Zap;
+            const categoryColor = CATEGORY_COLORS[pCategoryValue] || "bg-primary/10 text-primary";
+            
+            return (
+              <motion.div 
+                key={p.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.1 }}
                 onClick={() => setActiveTab('payments')}
-                className="w-full py-3 bg-primary text-surface rounded-xl text-sm font-semibold hover:opacity-90 active:scale-95 transition-all"
+                className="bg-surface-container-low p-2 sm:p-2.5 rounded-xl flex items-center gap-2.5 transition-all hover:shadow-md group border border-outline-variant/50 cursor-pointer"
               >
-                Ödemelere Git
-              </button>
-            </div>
-          ) : (
-            <div className="text-center py-6">
+                <div className={cn(
+                  "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
+                  categoryColor
+                )}>
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="font-headline font-semibold text-on-surface text-xs sm:text-sm truncate leading-tight line-clamp-1">{p.title}</h4>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant font-medium truncate mt-0.5">
+                    {diffDays === 0 ? 'Bugün' : `${diffDays} gün kaldı`}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className={cn(
+                    "font-bold text-sm sm:text-[15px] data-value tracking-tight",
+                    "text-rose-500"
+                  )}>
+                    -₺{Math.abs(p.amount).toLocaleString('tr-TR')}
+                  </p>
+                </div>
+              </motion.div>
+            );
+          })}
+          
+          {payments.filter(p => {
+             if (p.status === 'paid') return false;
+             const dueDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+             dueDate.setHours(23, 59, 59, 999);
+             const now = new Date();
+             now.setHours(0, 0, 0, 0);
+             const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+             return diffDays >= 0 && diffDays <= 7;
+          }).length === 0 && (
+            <div className="text-center py-6 bg-surface-container-low rounded-xl border border-outline-variant/50">
               <CheckCircle2 className="w-10 h-10 text-tertiary mx-auto mb-2 opacity-20" />
-              <p className="text-sm text-on-surface-variant font-medium">Bekleyen ödemeniz bulunmuyor.</p>
+              <p className="text-sm text-on-surface-variant font-medium">Bu hafta bekleyen ödemeniz bulunmuyor.</p>
             </div>
           )}
         </div>
@@ -734,25 +991,112 @@ const HomeScreen = ({ user, transactions, payments, setActiveTab }: {
   );
 };
 
-const TransactionsScreen = ({ user, transactions }: { user: User, transactions: Transaction[] }) => {
+const TransactionsScreen = ({ user, transactions, payments }: { user: User, transactions: Transaction[], payments: Payment[] }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tümü');
 
-  const monthlyExpense = Math.abs(transactions.filter(tx => tx.type === 'expense').reduce((acc, tx) => acc + tx.amount, 0));
+  const { currentMonthExpense, previousMonthExpense, expenseChangePercentage } = useMemo(() => {
+    const now = new Date();
+    
+    // Current Month Range
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    
+    // Previous Month Range
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const calcExpense = (start: Date, end: Date) => {
+      let total = 0;
+      
+      // Transactions (Paid bills are also here as they are saved as transactions when paid)
+      total += Math.abs(transactions.filter(tx => {
+        const txDate = tx.date instanceof Timestamp ? tx.date.toDate() : new Date(tx.date);
+        return tx.type === 'expense' && txDate >= start && txDate <= end;
+      }).reduce((acc, tx) => acc + tx.amount, 0));
+      
+      // Pending Payments
+      total += payments.filter(p => {
+        if (p.status === 'paid') return false; // Already in transactions
+        const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+        return pDate >= start && pDate <= end;
+      }).reduce((acc, p) => acc + p.amount, 0);
+      
+      return total;
+    };
+
+    const current = calcExpense(startOfCurrentMonth, endOfCurrentMonth);
+    const prev = calcExpense(startOfPrevMonth, endOfPrevMonth);
+    
+    let change = 0;
+    if (prev === 0 && current > 0) change = 100;
+    else if (prev > 0) change = ((current - prev) / prev) * 100;
+
+    return { 
+      currentMonthExpense: current, 
+      previousMonthExpense: prev, 
+      expenseChangePercentage: change 
+    };
+  }, [transactions, payments]);
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
+    const combined = [
+      ...transactions.map(tx => ({
+        id: tx.id,
+        title: tx.title,
+        amount: Math.abs(tx.amount),
+        type: tx.type,
+        category: tx.category,
+        date: tx.date,
+        createdAt: tx.createdAt instanceof Timestamp ? tx.createdAt.toDate().getTime() : (tx.date instanceof Timestamp ? tx.date.toDate().getTime() : new Date(tx.date).getTime()),
+        isRecurring: tx.isRecurring,
+        location: tx.location,
+        isPayment: false
+      })),
+      ...payments.map(p => ({
+        id: `payment-${p.id}`,
+        dbId: p.id,
+        title: p.title,
+        amount: Math.abs(p.amount),
+        type: 'expense' as const,
+        category: p.category,
+        date: p.dueDate,
+        createdAt: p.createdAt instanceof Timestamp ? p.createdAt.toDate().getTime() : (p.dueDate instanceof Timestamp ? p.dueDate.toDate().getTime() : new Date(p.dueDate).getTime()),
+        isRecurring: false,
+        location: 'Ödeme',
+        isPayment: true
+      }))
+    ];
+
+    return combined.filter(tx => {
       const matchesSearch = tx.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                            tx.category.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesFilter = activeFilter === 'Tümü' || 
-                           (activeFilter === 'Gelir' ? tx.type === 'income' : tx.category === activeFilter);
+      
+      let matchesFilter = activeFilter === 'Tümü';
+      if (!matchesFilter) {
+        if (activeFilter === 'Gelir') {
+          matchesFilter = tx.type === 'income';
+        } else if (activeFilter === 'Fatura') {
+          const faturaCategories = ['Fatura', ...BILL_SUB_CATEGORIES.map(b => b.label)];
+          matchesFilter = faturaCategories.includes(tx.category) || tx.category.toLowerCase().includes('fatura');
+        } else if (activeFilter === 'Kredi') {
+          matchesFilter = tx.category === 'Kredi' || tx.category.toLowerCase().includes('kredi ödemesi');
+        } else if (activeFilter === 'Kredi Kartı') {
+          matchesFilter = tx.category === 'Kredi Kartı' || tx.category.toLowerCase().includes('kredi kartı');
+        } else {
+          matchesFilter = tx.category === activeFilter;
+        }
+      }
+      
       return matchesSearch && matchesFilter;
+    }).sort((a, b) => {
+      return b.createdAt - a.createdAt;
     });
-  }, [transactions, searchQuery, activeFilter]);
+  }, [transactions, payments, searchQuery, activeFilter]);
 
-  const handleDelete = async (id: string) => {
-    const path = `users/${user.uid}/transactions/${id}`;
+  const handleDelete = async (id: string, isPayment?: boolean) => {
+    const path = isPayment ? `users/${user.uid}/payments/${id}` : `users/${user.uid}/transactions/${id}`;
     try {
       await deleteDoc(doc(db, path));
       setDeletingId(null);
@@ -769,59 +1113,36 @@ const TransactionsScreen = ({ user, transactions }: { user: User, transactions: 
       className="space-y-6 relative"
     >
       {/* Confirmation Modal */}
-      <AnimatePresence>
-        {deletingId && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setDeletingId(null)}
-              className="absolute inset-0 bg-primary/40 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-surface rounded-3xl p-8 w-full max-w-sm shadow-2xl border border-outline-variant/50"
-            >
-              <div className="w-16 h-16 bg-error/10 rounded-2xl flex items-center justify-center mb-6 mx-auto">
-                <Trash2 className="w-8 h-8 text-error" />
-              </div>
-              <h3 className="text-xl font-headline font-extrabold text-primary text-center mb-2">İşlemi Sil?</h3>
-              <p className="text-on-surface-variant text-center text-sm mb-8">Bu işlem geri alınamaz. Bu harcamayı/geliri silmek istediğinizden emin misiniz?</p>
-              
-              <div className="flex flex-col gap-3">
-                <button 
-                  onClick={() => handleDelete(deletingId)}
-                  className="w-full py-4 bg-error text-white rounded-full font-bold shadow-lg shadow-error/20 active:scale-95 transition-all"
-                >
-                  Evet, Sil
-                </button>
-                <button 
-                  onClick={() => setDeletingId(null)}
-                  className="w-full py-4 bg-surface-container-high text-primary rounded-full font-bold active:scale-95 transition-all"
-                >
-                  Vazgeç
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {deletingId && (
+        <ConfirmModal 
+          title="İşlemi Sil"
+          message="Bu harcamayı veya geliri silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
+          onConfirm={() => {
+            const item = filteredTransactions.find(t => (t.isPayment ? t.dbId : t.id) === deletingId);
+            if (item) handleDelete(deletingId, item.isPayment);
+          }}
+          onCancel={() => setDeletingId(null)}
+        />
+      )}
+
       {/* Spending Hero */}
-      <section className="relative overflow-hidden rounded-3xl p-8 bg-primary text-surface shadow-xl">
-        <div className="relative z-10">
-          <p className="text-surface/80 text-[10px] font-bold tracking-widest mb-1 uppercase">TOPLAM HARCAMA</p>
-          <h2 className="font-headline text-4xl font-extrabold tracking-tighter">
-            ₺{monthlyExpense.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-          </h2>
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 bg-surface/20 text-surface rounded-full text-xs font-medium">
-            <TrendingDown className="w-3 h-3" />
-            <span>Bu ay %4 azaldı</span>
+      <section className="relative overflow-hidden rounded-[20px] p-5 sm:p-6 bg-primary text-surface shadow-md border border-outline-variant/10">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
+          <div>
+            <p className="text-surface/80 text-[10px] font-bold tracking-widest mb-1 uppercase">Bu Ayki Harcama</p>
+            <h2 className="font-headline text-3xl font-extrabold tracking-tighter">
+              ₺{currentMonthExpense.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            </h2>
+          </div>
+          <div className={cn(
+            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold",
+            expenseChangePercentage > 0 ? "bg-rose-500/20 text-rose-100" : "bg-emerald-500/20 text-emerald-100"
+          )}>
+            {expenseChangePercentage > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+            <span>Geçen aya göre %{Math.abs(expenseChangePercentage).toFixed(1)} {expenseChangePercentage > 0 ? 'arttı' : 'azaldı'}</span>
           </div>
         </div>
-        <div className="absolute top-0 right-0 -mr-8 -mt-8 w-48 h-48 bg-tertiary/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-0 right-0 -mr-4 -mt-4 w-32 h-32 bg-tertiary/20 rounded-full blur-2xl"></div>
       </section>
 
       {/* Search & Filter */}
@@ -866,46 +1187,47 @@ const TransactionsScreen = ({ user, transactions }: { user: User, transactions: 
             </h3>
             <span className="text-[10px] font-bold text-outline uppercase">{filteredTransactions.length} Kayıt</span>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {filteredTransactions.map((tx, i) => {
               const Icon = CATEGORY_ICONS[tx.category] || ShoppingBag;
+              const categoryColor = CATEGORY_COLORS[tx.category] || (tx.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500");
               return (
                 <motion.div 
                   key={tx.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex items-center p-4 bg-surface-container-low rounded-2xl shadow-sm hover:shadow-md transition-all border border-outline-variant/50 group"
+                  className="flex items-center p-2 sm:p-2.5 bg-surface-container-low rounded-xl shadow-sm hover:shadow-md transition-all border border-outline-variant/50 group"
                 >
                   <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30",
-                    tx.type === 'income' ? "bg-tertiary/10 text-tertiary" : "bg-primary/5 text-primary"
+                    "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105 shadow-sm border border-outline-variant/30 shrink-0",
+                    categoryColor
                   )}>
-                    <Icon className="w-5 h-5" strokeWidth={2} />
+                    <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2} />
                   </div>
-                  <div className="ml-4 flex-grow">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-headline font-semibold text-on-surface text-sm">{tx.title}</h4>
-                      {tx.isRecurring && <Repeat className="w-3 h-3 text-primary opacity-40" />}
+                  <div className="ml-2.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-headline font-semibold text-on-surface text-xs sm:text-sm truncate leading-tight line-clamp-1">{tx.title}</h4>
+                      {tx.isRecurring && <Repeat className="w-2.5 h-2.5 text-primary opacity-40 shrink-0" />}
                     </div>
-                    <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
-                      {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : tx.date} • {tx.category}
+                    <p className="text-[10px] text-on-surface-variant font-medium truncate mt-0.5">
+                      {tx.date instanceof Timestamp ? tx.date.toDate().toLocaleDateString('tr-TR') : tx.date}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-1">
                     <div className="text-right">
                       <span className={cn(
-                        "text-base font-bold block data-value",
-                        tx.type === 'income' ? "text-tertiary" : "text-on-surface"
+                        "font-bold text-sm sm:text-[15px] block data-value tracking-tight",
+                        tx.type === 'income' ? "text-emerald-500" : "text-rose-500"
                       )}>
-                        {tx.amount > 0 ? '+' : ''}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
+                        {tx.type === 'income' ? '+' : '-'}₺{Math.abs(tx.amount).toLocaleString('tr-TR')}
                       </span>
                     </div>
                     <button 
-                      onClick={() => setDeletingId(tx.id)}
-                      className="p-2 text-outline hover:text-error transition-colors rounded-xl hover:bg-error/10"
+                      onClick={() => setDeletingId(tx.isPayment ? tx.dbId : tx.id)}
+                      className="p-1 sm:p-1.5 text-outline hover:text-error transition-colors rounded-lg hover:bg-error/10"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                   </div>
                 </motion.div>
@@ -928,6 +1250,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
   const [title, setTitle] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [category, setCategory] = useState('Diğer');
+  const [subCategory, setSubCategory] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -950,57 +1273,35 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
     const path = `users/${user.uid}/transactions`;
     const customRule = useCustomRule ? `${customWeekIndex}:${customWeekday}` : null;
     const baseAmount = type === 'expense' ? -Math.abs(Number(amount)) : Math.abs(Number(amount));
-    const groupId = crypto.randomUUID();
+    const finalCategory = category === 'Fatura' && subCategory ? subCategory : category;
 
     try {
-      if (isRecurring) {
-        const transactionsToCreate = [];
-        let currentDate = new Date(startDate);
-        // Default to 1 year if no end date is provided
-        const finalDate = endDate ? new Date(endDate) : new Date(currentDate.getFullYear() + 1, currentDate.getMonth(), currentDate.getDate());
-        
-        let count = 0;
-        while (currentDate <= finalDate && count < 120) { // Max 120 occurrences to prevent infinite loops
-          transactionsToCreate.push({
-            userId: user.uid,
-            title,
-            amount: baseAmount,
-            type,
-            category,
-            isRecurring: true,
-            recurringGroupId: groupId,
-            frequency,
-            customRule,
-            startDate: Timestamp.fromDate(new Date(startDate)),
-            endDate: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
-            date: Timestamp.fromDate(new Date(currentDate)),
-            createdAt: Timestamp.now()
-          });
+      // Always add the current transaction
+      await addDoc(collection(db, path), {
+        userId: user.uid,
+        title: subCategory ? `${subCategory} Faturası` : title,
+        amount: baseAmount,
+        type,
+        category,
+        subCategory: subCategory || null,
+        isRecurring: isRecurring,
+        date: Timestamp.fromDate(new Date(startDate)),
+        createdAt: Timestamp.now()
+      });
 
-          // Increment date based on frequency
-          if (frequency === 'daily') {
-            currentDate.setDate(currentDate.getDate() + 1);
-          } else if (frequency === 'weekly') {
-            currentDate.setDate(currentDate.getDate() + 7);
-          } else if (frequency === 'monthly') {
-            currentDate.setMonth(currentDate.getMonth() + 1);
-          } else if (frequency === 'yearly') {
-            currentDate.setFullYear(currentDate.getFullYear() + 1);
-          }
-          count++;
-        }
-
-        // Save all generated transactions
-        await Promise.all(transactionsToCreate.map(tx => addDoc(collection(db, path), tx)));
-      } else {
-        await addDoc(collection(db, path), {
+      // If recurring, also add to planned payments for reminders
+      if (isRecurring && type === 'expense') {
+        const payPath = `users/${user.uid}/payments`;
+        await addDoc(collection(db, payPath), {
           userId: user.uid,
-          title,
-          amount: baseAmount,
-          type,
-          category,
-          isRecurring: false,
-          date: Timestamp.fromDate(new Date(startDate)),
+          title: subCategory ? `${subCategory} Faturası` : title,
+          amount: Math.abs(Number(amount)),
+          dueDate: startDate, // Next instance or starting from now
+          dueTime: '09:00',
+          category: finalCategory,
+          status: 'pending',
+          reminders: [],
+          isRecurring: true,
           createdAt: Timestamp.now()
         });
       }
@@ -1025,6 +1326,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
           onClick={() => {
             setType('expense');
             setCategory(EXPENSE_CATEGORIES[0].label);
+            setSubCategory('');
           }}
           className={cn(
             "relative z-10 flex-1 py-3 sm:py-4 px-6 rounded-xl font-headline font-bold text-sm transition-all duration-500",
@@ -1044,6 +1346,7 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
           onClick={() => {
             setType('income');
             setCategory(INCOME_CATEGORIES[0].label);
+            setSubCategory('');
           }}
           className={cn(
             "relative z-10 flex-1 py-3 sm:py-4 px-6 rounded-xl font-headline font-bold text-sm transition-all duration-500",
@@ -1088,43 +1391,112 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
 
       {/* Form Bento */}
       <div className="grid grid-cols-1 gap-4">
-        <div className="bg-surface-container-low rounded-3xl p-6 border border-outline-variant/50">
-          <h3 className="text-[10px] font-bold text-on-surface-variant mb-4 flex items-center gap-2 uppercase tracking-wider">
-            <ShoppingBag className="w-4 h-4" /> KATEGORİ
+        <div className="bg-surface-container-low rounded-3xl p-2 sm:p-3 border border-outline-variant/50">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-1 flex items-center gap-2 uppercase tracking-wider pl-1">
+            { (() => {
+                const activeCat = (type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(c => c.label === category);
+                const activeSubCat = BILL_SUB_CATEGORIES.find(s => s.label === subCategory);
+                const Icon = activeSubCat?.icon || activeCat?.icon || ShoppingBag;
+                return <Icon className="w-4 h-4" />;
+            })() } KATEGORİ
           </h3>
-          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+          <div className="grid grid-cols-5 gap-y-0 gap-x-0">
             {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => (
               <div 
                 key={cat.id} 
-                onClick={() => setCategory(cat.label)}
-                className="flex flex-col items-center gap-2 min-w-[72px] cursor-pointer group"
+                onClick={() => {
+                  setCategory(cat.label);
+                  if (cat.label !== 'Fatura') setSubCategory('');
+                }}
+                className="flex flex-col items-center gap-0.5 cursor-pointer group scale-90 sm:scale-100"
               >
                   <div className={cn(
-                    "w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-sm",
-                    category === cat.label ? "bg-primary text-surface shadow-md" : "bg-surface text-primary"
+                    "w-11 h-11 rounded-xl flex items-center justify-center transition-all shadow-sm",
+                    category === cat.label ? "border-2 border-black" : "border border-outline-variant/20 hover:border-primary/30",
+                    "bg-surface-container-highest/20"
                   )}>
-                  <cat.icon className="w-6 h-6" />
+                  <cat.icon className={cn(
+                    "w-5 h-5 transition-colors",
+                    CATEGORY_COLORS[cat.label]?.split(' ')[1] || "text-on-surface-variant"
+                  )} />
                 </div>
-                <span className={cn("text-[10px] font-medium", category === cat.label ? "text-primary font-bold" : "text-on-surface")}>
+                <span className={cn(
+                  "text-[8px] font-bold text-center leading-tight truncate w-full px-0.5 mt-0.5", 
+                  category === cat.label ? "text-primary" : "text-on-surface-variant/80"
+                )}>
                   {cat.label}
                 </span>
               </div>
             ))}
           </div>
+
+          <AnimatePresence>
+            {category === 'Fatura' && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 8 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                className="overflow-hidden border-t border-outline-variant/10 pt-1"
+              >
+                <h4 className="text-[10px] font-bold text-on-surface-variant mb-1 uppercase tracking-widest pl-1">FATURA ÇEŞİDİ</h4>
+                <div className="grid grid-cols-5 gap-x-0 gap-y-0">
+                  {BILL_SUB_CATEGORIES.map(sub => (
+                    <button
+                      key={sub.id}
+                      onClick={() => {
+                        setSubCategory(sub.label);
+                        setTitle(`${sub.label} Faturası`);
+                      }}
+                      className="flex flex-col items-center gap-0.5 p-0.5 transition-all rounded-xl scale-90 sm:scale-100"
+                    >
+                      <div className={cn(
+                        "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
+                        subCategory === sub.label ? "border-2 border-black" : "border border-outline-variant/20",
+                        "bg-surface-container-highest/20"
+                      )}>
+                        <sub.icon className={cn(
+                          "w-4 h-4",
+                          sub.color
+                        )} />
+                      </div>
+                      <span className={cn(
+                        "text-[7px] font-bold text-center leading-tight mt-0.5",
+                        subCategory === sub.label ? "text-primary" : "text-on-surface-variant/70"
+                      )}>
+                        {sub.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="bg-surface-container-low rounded-[1.5rem] p-6">
           <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 flex items-center gap-2 uppercase tracking-wider">
-            <ReceiptText className="w-4 h-4" /> İŞLEM BAŞLIĞI
+            <ReceiptText className="w-4 h-4" /> ÖDEME ADI
           </h3>
           <div className="space-y-3">
             <input 
               type="text" 
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={(category === 'Kredi' || category === 'Kredi Kartı') ? "Banka veya kart adı girin..." : "Örn: Market Alışverişi"}
+              placeholder={(category === 'Kredi' || category === 'Kredi Kartı') ? "Banka veya kart adı girin..." : "Örn: Elektrik Faturası"}
               className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
             />
+            
+            {category === 'Fatura' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Son Ödeme Tarihi</label>
+                <input 
+                  type="date" 
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
+                />
+              </div>
+            )}
             
             {(category === 'Kredi' || category === 'Kredi Kartı') && (
               <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -1142,50 +1514,50 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
           </div>
         </div>
 
-        <div className="bg-surface-container-low rounded-[1.5rem] p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[10px] font-bold text-on-surface-variant flex items-center gap-2 uppercase tracking-wider">
-              <Repeat className="w-4 h-4" /> TEKRARLAYAN İŞLEM
-            </h3>
-            <button 
-              onClick={() => setIsRecurring(!isRecurring)}
-              className={cn(
-                "w-12 h-6 rounded-full transition-all relative",
-                isRecurring ? "bg-primary" : "bg-outline-variant"
-              )}
-            >
-              <div className={cn(
-                "absolute top-1 w-4 h-4 rounded-full transition-all",
-                isRecurring ? "left-7 bg-surface" : "left-1 bg-white"
-              )} />
-            </button>
-          </div>
-          
-          {isRecurring && (
-            <div className="space-y-4 pt-2">
-              <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                {[
-                  { id: 'daily', label: 'Günlük' },
-                  { id: 'weekly', label: 'Haftalık' },
-                  { id: 'monthly', label: 'Aylık' },
-                  { id: 'yearly', label: 'Yıllık' },
-                ].map(freq => (
-                  <button
-                    key={freq.id}
-                    onClick={() => setFrequency(freq.id as any)}
-                    className={cn(
-                      "px-4 py-2 rounded-full text-[10px] font-bold transition-all whitespace-nowrap",
-                      frequency === freq.id ? "bg-primary text-surface" : "bg-surface-container-lowest text-on-surface-variant"
-                    )}
-                  >
-                    {freq.label}
-                  </button>
-                ))}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
+        {type === 'expense' && (
+          <div className="bg-surface-container-low rounded-[1.5rem] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-bold text-on-surface-variant flex items-center gap-2 uppercase tracking-wider">
+                <Repeat className="w-4 h-4" /> TEKRARLAYAN İŞLEM
+              </h3>
+              <button 
+                onClick={() => setIsRecurring(!isRecurring)}
+                className={cn(
+                  "w-12 h-6 rounded-full transition-all relative",
+                  isRecurring ? "bg-primary" : "bg-outline-variant"
+                )}
+              >
+                <div className={cn(
+                  "absolute top-1 w-4 h-4 rounded-full transition-all",
+                  isRecurring ? "left-7 bg-surface" : "left-1 bg-white"
+                )} />
+              </button>
+            </div>
+            
+            {isRecurring && (
+              <div className="space-y-4 pt-2">
+                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                  {[
+                    { id: 'daily', label: 'Günlük' },
+                    { id: 'weekly', label: 'Haftalık' },
+                    { id: 'monthly', label: 'Aylık' },
+                    { id: 'yearly', label: 'Yıllık' },
+                  ].map(freq => (
+                    <button
+                      key={freq.id}
+                      onClick={() => setFrequency(freq.id as any)}
+                      className={cn(
+                        "px-4 py-2 rounded-full text-[10px] font-bold transition-all whitespace-nowrap",
+                        frequency === freq.id ? "bg-primary text-surface" : "bg-surface-container-lowest text-on-surface-variant"
+                      )}
+                    >
+                      {freq.label}
+                    </button>
+                  ))}
+                </div>
+                
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Başlangıç</label>
+                  <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Ödeme Tarihi</label>
                   <input 
                     type="date" 
                     value={startDate}
@@ -1193,74 +1565,10 @@ const AddTransactionScreen = ({ user, onComplete }: { user: User, onComplete: ()
                     className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Bitiş (Opsiyonel)</label>
-                  <input 
-                    type="date" 
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
-                  />
-                </div>
               </div>
-
-              <div className="space-y-4 pt-2 border-t border-outline-variant/10">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[10px] font-bold text-on-surface-variant flex items-center gap-2 uppercase tracking-wider">
-                    ÖZEL KURAL (AYLIK)
-                  </h3>
-                  <button 
-                    onClick={() => setUseCustomRule(!useCustomRule)}
-                    className={cn(
-                      "w-10 h-5 rounded-full transition-all relative",
-                      useCustomRule ? "bg-primary" : "bg-outline-variant"
-                    )}
-                  >
-                    <div className={cn(
-                      "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all",
-                      useCustomRule ? "left-5" : "left-1"
-                    )} />
-                  </button>
-                </div>
-                
-                {useCustomRule && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Hafta</label>
-                      <select 
-                        value={customWeekIndex}
-                        onChange={(e) => setCustomWeekIndex(e.target.value)}
-                        className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm"
-                      >
-                        <option value="1">1. Hafta</option>
-                        <option value="2">2. Hafta</option>
-                        <option value="3">3. Hafta</option>
-                        <option value="4">4. Hafta</option>
-                        <option value="last">Son Hafta</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Gün</label>
-                      <select 
-                        value={customWeekday}
-                        onChange={(e) => setCustomWeekday(e.target.value)}
-                        className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm"
-                      >
-                        <option value="1">Pazartesi</option>
-                        <option value="2">Salı</option>
-                        <option value="3">Çarşamba</option>
-                        <option value="4">Perşembe</option>
-                        <option value="5">Cuma</option>
-                        <option value="6">Cumartesi</option>
-                        <option value="0">Pazar</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       <button 
@@ -1336,6 +1644,7 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
   const [dueTime, setDueTime] = useState('09:00');
   const [category, setCategory] = useState('Fatura');
   const [subCategory, setSubCategory] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
@@ -1353,6 +1662,7 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
         category: finalCategory,
         status: 'pending',
         reminders: [],
+        isRecurring: isRecurring || category === 'Abonelik',
         createdAt: Timestamp.now()
       });
       onComplete();
@@ -1396,7 +1706,7 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
             placeholder="0,00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full max-w-[280px] bg-transparent border-none text-center font-headline text-6xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
+            className="w-full max-w-[200px] bg-transparent border-none text-center font-headline text-4xl font-extrabold text-primary placeholder:text-surface-container-highest focus:ring-0 outline-none"
           />
         </div>
       </div>
@@ -1492,6 +1802,35 @@ const AddPaymentScreen = ({ user, onComplete }: { user: User, onComplete: () => 
             onChange={(e) => setDueTime(e.target.value)}
             className="w-full bg-surface-container-lowest rounded-xl border-none text-primary font-medium p-3 text-sm focus:ring-0 shadow-sm" 
           />
+        </div>
+
+        <div className="bg-surface-container-low rounded-[1.5rem] p-6">
+          <h3 className="text-[10px] font-bold text-on-surface-variant mb-3 uppercase tracking-wider">AYARLAR</h3>
+          <button 
+            type="button"
+            onClick={() => setIsRecurring(!isRecurring)}
+            className={cn(
+              "w-full p-4 rounded-2xl flex items-center justify-between transition-all font-bold text-sm",
+              isRecurring || category === 'Abonelik' ? "bg-primary/10 text-primary border border-primary/20" : "bg-surface-container-lowest text-outline border border-outline-variant/10"
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Repeat className={cn("w-4 h-4", (isRecurring || category === 'Abonelik') && "text-primary")} />
+              <span>Abonelik mi?</span>
+            </div>
+            <div className={cn(
+              "w-10 h-6 rounded-full relative transition-colors p-1",
+              isRecurring || category === 'Abonelik' ? "bg-primary" : "bg-surface-container-high"
+            )}>
+              <motion.div 
+                animate={{ x: isRecurring || category === 'Abonelik' ? 16 : 0 }}
+                className="w-4 h-4 bg-white rounded-full shadow-sm"
+              />
+            </div>
+          </button>
+          <p className="text-[9px] text-on-surface-variant mt-2 px-1 font-medium leading-relaxed italic opacity-80">
+            * İşaretlerseniz 'Abonelikler' sekmesinde gösterilir.
+          </p>
         </div>
       </div>
 
@@ -1651,9 +1990,10 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
   ];
 
   const renderBillCard = (bill: Payment) => {
-    const subCat = BILL_SUB_CATEGORIES.find(s => s.label === bill.title || bill.title.toLowerCase().includes(s.label.toLowerCase()));
-    const Icon = CATEGORY_ICONS[bill.category] || (subCat ? subCat.icon : Zap);
-    const iconColor = subCat ? subCat.color : "text-primary";
+    // Determine category and icon directly from bill.category
+    const Icon = CATEGORY_ICONS[bill.category] || FileText;
+    const categoryColor = CATEGORY_COLORS[bill.category] || "bg-primary/10 text-primary";
+    
     const isEditingReminder = reminderBillId === bill.id;
     const currentReminders = bill.reminders || (bill.reminderTime && bill.reminderTime !== 'none' ? [bill.reminderTime] : []);
 
@@ -1676,12 +2016,18 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
       }
     };
 
-    const formatDate = (dateStr: string) => {
+    const formatDate = (date: any) => {
       try {
-        const [year, month, day] = dateStr.split('-');
-        return `${day}/${month}/${year}`;
+        let dateStr = '';
+        if (date instanceof Timestamp) dateStr = date.toDate().toISOString().split('T')[0];
+        else if (date instanceof Date) dateStr = date.toISOString().split('T')[0];
+        else dateStr = String(date);
+        
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
       } catch (e) {
-        return dateStr;
+        return String(date);
       }
     };
 
@@ -1690,28 +2036,28 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
         key={bill.id}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-surface-container-low p-4 sm:p-5 rounded-3xl flex flex-col gap-4 sm:gap-5 group hover:shadow-lg transition-all shadow-sm relative overflow-hidden border border-outline-variant/50"
+        className="bg-surface-container-low p-3 sm:p-4 rounded-[1.25rem] flex flex-col gap-3 sm:gap-4 group hover:shadow-md transition-all shadow-sm relative overflow-hidden border border-outline-variant/50"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className={cn(
-              "w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm border group-hover:scale-105 transition-transform",
-              subCat ? `bg-current/10 border-current/5 ${iconColor}` : "bg-primary/10 border-primary/5 text-primary"
+              "w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0 shadow-sm border group-hover:scale-105 transition-transform",
+              categoryColor
             )}>
-              <Icon className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
+              <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" strokeWidth={2.5} />
             </div>
             <div className="flex-1 min-w-0">
-              <h4 className="font-bold text-on-surface text-sm sm:text-base truncate">{bill.title}</h4>
-              <p className="text-[9px] sm:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest opacity-60 truncate">
+              <h4 className="font-bold text-on-surface text-sm sm:text-sm truncate leading-tight line-clamp-1">{bill.title}</h4>
+              <p className="text-[9px] sm:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest opacity-80 mt-0.5 truncate">
                 Son Gün: {formatDate(bill.dueDate)}
               </p>
             </div>
           </div>
           <div className="text-right shrink-0">
-            <p className="font-headline font-extrabold text-base sm:text-lg text-primary data-value">₺{bill.amount.toLocaleString('tr-TR')}</p>
-            <div className="flex flex-col items-end gap-1">
+            <p className="font-headline font-extrabold text-sm sm:text-[15px] text-primary data-value tracking-tight">₺{bill.amount.toLocaleString('tr-TR')}</p>
+            <div className="flex flex-col items-end gap-1 mt-0.5">
               <span className={cn(
-                "text-[8px] sm:text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-md",
+                "text-[7px] sm:text-[8px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-md",
                 bill.status === 'pending' ? "bg-error/10 text-error" : 
                 bill.status === 'paid' ? "bg-tertiary/10 text-tertiary" : "bg-primary/10 text-primary"
               )}>
@@ -1721,7 +2067,7 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
               {bill.status === 'pending' && (
                 <button 
                   onClick={() => handleMarkAsPaid(bill.id)}
-                  className="text-[10px] font-extrabold text-tertiary hover:scale-105 transition-transform uppercase tracking-tighter"
+                  className="text-[9px] font-extrabold text-tertiary hover:scale-105 transition-transform uppercase tracking-tighter mt-0.5"
                 >
                   ÖDE
                 </button>
@@ -1730,7 +2076,7 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+        <div className="flex items-center justify-between pt-3 border-t border-outline-variant/10">
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <div className="relative shrink-0">
               <Bell className={cn("w-4 h-4 sm:w-5 sm:h-5 transition-all", currentReminders.length > 0 ? "text-primary fill-primary/20" : "text-outline opacity-40")} />
@@ -1800,115 +2146,6 @@ const PaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments
   );
 };
 
-const ReminderSettingsModal = ({ bill, currentReminders, handleToggleReminder, onClose }: any) => {
-  const REMINDER_OPTIONS = [
-    { value: '1_hour_before', label: '1 Saat Önce' },
-    { value: '2_hours_before', label: '2 Saat Önce' },
-    { value: '1_day_before', label: '1 Gün Önce' },
-    { value: '2_days_before', label: '2 Gün Önce' },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary/20 backdrop-blur-sm">
-      <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="bg-surface rounded-3xl p-8 w-full max-w-sm shadow-2xl space-y-6"
-      >
-        <div className="flex justify-between items-center">
-          <h3 className="text-xl font-headline font-bold text-primary">Hatırlatıcı Ayarları</h3>
-          <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full">
-            <Search className="w-5 h-5 text-on-surface-variant rotate-45" />
-          </button>
-        </div>
-        <div className="grid grid-cols-1 gap-2">
-          {REMINDER_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => handleToggleReminder(bill.id, option.value)}
-              className={cn(
-                "px-4 py-3 rounded-2xl text-sm font-bold transition-all border flex items-center justify-between",
-                currentReminders.includes(option.value) 
-                  ? "bg-primary text-surface border-primary shadow-md" 
-                  : "bg-surface-container-low text-on-surface-variant border-outline-variant/10 hover:bg-surface-container-high"
-              )}
-            >
-              {option.label}
-              {currentReminders.includes(option.value) && <CheckCircle2 className="w-4 h-4" />}
-            </button>
-          ))}
-        </div>
-        <button 
-          onClick={onClose}
-          className="w-full wealth-gradient text-white py-4 rounded-2xl font-bold flex items-center justify-center"
-        >
-          Tamam
-        </button>
-      </motion.div>
-    </div>
-  );
-};
-
-const EditPaymentModal = ({ payment, onSave, onClose }: any) => {
-  const [amount, setAmount] = useState(payment.amount.toString());
-  const [dueDate, setDueDate] = useState(payment.dueDate);
-  const [status, setStatus] = useState(payment.status);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary/20 backdrop-blur-sm">
-      <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="bg-surface rounded-3xl p-8 w-full max-w-sm shadow-2xl space-y-6"
-      >
-        <h3 className="text-xl font-headline font-bold text-primary">Ödemeyi Düzenle</h3>
-        
-        <div className="space-y-4">
-          <div>
-            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-2">TUTAR</label>
-            <input 
-              type="number" 
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full bg-surface-container-low p-4 rounded-2xl border-none focus:ring-0 font-bold text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-2">TARİH</label>
-            <input 
-              type="date" 
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full bg-surface-container-low p-4 rounded-2xl border-none focus:ring-0 font-bold text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest block mb-2">DURUM</label>
-            <select 
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="w-full bg-surface-container-low p-4 rounded-2xl border-none focus:ring-0 font-bold text-primary"
-            >
-              <option value="pending">BEKLİYOR</option>
-              <option value="paid">ÖDENDİ</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-4 text-on-surface-variant font-bold hover:bg-surface-container-low rounded-2xl transition-colors">Vazgeç</button>
-          <button 
-            onClick={() => onSave({ amount: Number(amount), dueDate, status })}
-            className="flex-1 wealth-gradient text-white py-4 rounded-2xl font-bold shadow-lg"
-          >
-            Kaydet
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-};
-
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -1933,9 +2170,9 @@ const EditPaymentModal = ({ payment, onSave, onClose }: any) => {
           </div>
           <button 
             onClick={onAddPayment}
-            className="bg-surface text-primary px-6 py-3 rounded-full font-bold flex items-center gap-2 active:scale-95 duration-200 shadow-sm hover:bg-surface-container-low transition-colors"
+            className="bg-surface text-primary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 active:scale-95 duration-200 shadow-sm hover:bg-surface-container-low transition-colors text-sm border border-outline-variant/30"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4.5 h-4.5" />
             Ödeme Ekle
           </button>
         </div>
@@ -2372,11 +2609,6 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
             <div className="w-48 h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <RePieChart>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--surface)', borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    itemStyle={{ color: 'var(--on-surface)' }}
-                    formatter={(value: number) => `₺${value.toLocaleString('tr-TR')}`} 
-                  />
                   <Pie
                     data={pieData.length > 0 ? pieData : [{ name: 'Veri Yok', value: 100, color: 'var(--outline-variant)' }]}
                     cx="50%"
@@ -2394,9 +2626,9 @@ const ReportsScreen = ({ transactions, payments, isDarkMode }: { transactions: T
                 </RePieChart>
               </ResponsiveContainer>
             </div>
-            <div className="w-full space-y-3">
+            <div className="w-full space-y-2">
               {pieData.slice(0, 4).map(item => (
-                <div key={item.name} className="flex items-center justify-between">
+                <div key={item.name} className="flex items-center justify-between py-1 border-b border-outline-variant/10 last:border-0">
                   <div className="flex items-center gap-3">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
                     <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">{item.name}</span>
@@ -2516,6 +2748,267 @@ const getNthWeekdayOfMonth = (year: number, month: number, weekIndex: string, we
     const day = 1 + dayOffset + (n - 1) * 7;
     return new Date(year, month, day);
   }
+};
+
+const NewPaymentsScreen = ({ user, payments, onAddPayment }: { user: User, payments: Payment[], onAddPayment: () => void }) => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'subscriptions' | 'paid'>('pending');
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const next15Days = new Date(now);
+  next15Days.setDate(now.getDate() + 15);
+
+  const upcomingNeeds = payments
+    .filter(p => p.status !== 'paid')
+    .filter(p => {
+      const pDate = p.dueDate instanceof Timestamp ? p.dueDate.toDate() : new Date(p.dueDate);
+      return pDate >= now && pDate <= next15Days;
+    })
+    .reduce((acc, p) => acc + p.amount, 0);
+
+  const handleMarkAsPaid = async (billId: string) => {
+    const bill = payments.find(p => p.id === billId);
+    if (!bill) return;
+
+    const path = `users/${user.uid}/payments/${billId}`;
+    const txPath = `users/${user.uid}/transactions`;
+    try {
+      await updateDoc(doc(db, path), { status: 'paid' });
+      
+      await addDoc(collection(db, txPath), {
+        userId: user.uid,
+        title: bill.title,
+        amount: -Math.abs(bill.amount),
+        type: 'expense',
+        category: bill.category,
+        date: Timestamp.now(),
+        createdAt: Timestamp.now(),
+        paymentId: billId
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  };
+
+  const handleDeletePayment = async () => {
+    if (!deleteId) return;
+    const path = `users/${user.uid}/payments/${deleteId}`;
+    try {
+      await deleteDoc(doc(db, path));
+      setDeleteId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const handleUpdatePayment = async (updatedBill: any) => {
+    if (!editingPayment) return;
+    const path = `users/${user.uid}/payments/${editingPayment.id}`;
+    const txPath = `users/${user.uid}/transactions`;
+    
+    try {
+      const wasNotPaid = editingPayment.status !== 'paid';
+      const isNowPaid = updatedBill.status === 'paid';
+
+      await updateDoc(doc(db, path), updatedBill);
+
+      if (wasNotPaid && isNowPaid) {
+        await addDoc(collection(db, txPath), {
+          userId: user.uid,
+          title: editingPayment.title,
+          amount: -Math.abs(updatedBill.amount || editingPayment.amount),
+          type: 'expense',
+          category: editingPayment.category,
+          date: Timestamp.now(),
+          createdAt: Timestamp.now(),
+          paymentId: editingPayment.id
+        });
+      }
+      setEditingPayment(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  };
+
+  const pendingBills = payments.filter(p => p.status !== 'paid');
+  const subscriptions = payments.filter(p => 
+    p.isRecurring || 
+    (p.title && (
+      p.title.toLowerCase().includes('netflix') || 
+      p.title.toLowerCase().includes('spotify') || 
+      p.title.toLowerCase().includes('youtube') || 
+      p.title.toLowerCase().includes('premium') ||
+      p.title.toLowerCase().includes('abonelik') ||
+      p.title.toLowerCase().includes('exxen') ||
+      p.title.toLowerCase().includes('amazon')
+    ))
+  );
+  
+  const paidBills = payments.filter(p => p.status === 'paid');
+
+  let activeList = pendingBills;
+  if (activeTab === 'subscriptions') activeList = subscriptions;
+  if (activeTab === 'paid') activeList = paidBills;
+
+  activeList.sort((a, b) => {
+    const dateA = a.dueDate instanceof Timestamp ? a.dueDate.toDate() : new Date(a.dueDate);
+    const dateB = b.dueDate instanceof Timestamp ? b.dueDate.toDate() : new Date(b.dueDate);
+    return dateA.getTime() - dateB.getTime();
+  });
+
+  const renderBillCard = (bill: Payment) => {
+    // Determine category and icon directly from bill.category
+    const Icon = CATEGORY_ICONS[bill.category] || FileText;
+    const categoryColor = CATEGORY_COLORS[bill.category] || "bg-primary/10 text-primary";
+    
+    const formatDate = (date: any) => {
+      try {
+        let dateStr = '';
+        if (date instanceof Timestamp) dateStr = date.toDate().toISOString().split('T')[0];
+        else if (date instanceof Date) dateStr = date.toISOString().split('T')[0];
+        else dateStr = String(date);
+        
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      } catch (e) {
+        return String(date);
+      }
+    };
+
+    const isPaid = bill.status === 'paid';
+
+    return (
+      <motion.div 
+        key={bill.id}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={cn(
+          "bg-surface-container-low p-3 sm:p-4 rounded-[20px] flex items-center justify-between gap-3 sm:gap-4 group transition-all border border-outline-variant/30",
+          isPaid ? "opacity-60 grayscale-[0.5]" : "hover:shadow-md"
+        )}
+      >
+        <button 
+          onClick={!isPaid ? () => handleMarkAsPaid(bill.id) : undefined}
+          disabled={isPaid}
+          className={cn(
+            "w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors",
+            isPaid ? "bg-tertiary border-tertiary text-surface" : "border-outline-variant hover:border-primary cursor-pointer text-transparent hover:bg-primary/5"
+          )}
+        >
+          <CheckSquare className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isPaid ? "text-surface" : "opacity-0")} />
+        </button>
+
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-1 min-w-0">
+          <div className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm border", categoryColor)}>
+            <Icon className="w-3.5 h-3.5" strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className={cn("font-bold text-on-surface text-xs sm:text-sm truncate", isPaid && "line-through opacity-70")}>
+              {bill.title}
+            </h4>
+            <p className="text-[9px] sm:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest mt-0.5 truncate">
+              {formatDate(bill.dueDate)}
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex flex-col items-end shrink-0 gap-1">
+          <p className={cn("font-headline font-extrabold text-sm sm:text-[15px] tracking-tight", isPaid ? "text-on-surface-variant" : "text-primary")}>
+            ₺{bill.amount.toLocaleString('tr-TR')}
+          </p>
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => setEditingPayment(bill)} className="p-1 text-outline hover:text-primary rounded"><Search className="w-3.5 h-3.5" /></button>
+            <button onClick={() => setDeleteId(bill.id)} className="p-1 text-outline hover:text-error rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-6"
+    >
+      <section className="relative overflow-hidden rounded-[24px] p-6 bg-gradient-to-br from-[#1E293B] to-[#0F172A] text-white shadow-xl border border-outline-variant/10">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full mb-3 text-white">
+              <ListChecks className="w-3.5 h-3.5" />
+              <p className="text-[10px] font-bold tracking-widest uppercase">15 Günlük Nakit İhtiyacı</p>
+            </div>
+            <h2 className="font-headline text-4xl sm:text-5xl font-extrabold tracking-tighter text-white">
+              ₺{upcomingNeeds.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+            </h2>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="flex gap-1.5 sm:gap-2 p-1.5 bg-surface-container-low rounded-[18px] mb-4 sm:mb-6 border border-outline-variant/30 flex-wrap">
+          <button 
+            onClick={() => setActiveTab('pending')}
+            className={cn("flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[30%]", activeTab === 'pending' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
+          >
+            Bekleyenler
+          </button>
+          <button 
+            onClick={() => setActiveTab('subscriptions')}
+            className={cn("flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[30%]", activeTab === 'subscriptions' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
+          >
+            Abonelikler
+          </button>
+          <button 
+            onClick={() => setActiveTab('paid')}
+            className={cn("flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all min-w-[30%]", activeTab === 'paid' ? "bg-surface shadow-sm text-primary" : "text-outline hover:text-primary hover:bg-surface/50")}
+          >
+            Ödenenler
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <AnimatePresence mode="popLayout">
+            {activeList.length === 0 ? (
+              <motion.div 
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="text-center py-12 bg-surface-container-lowest rounded-[24px] border border-outline-variant/20 shadow-sm"
+              >
+                <div className="w-16 h-16 bg-surface-container-high rounded-3xl flex items-center justify-center mx-auto mb-4 rotate-3">
+                  <CheckSquare className="w-8 h-8 text-outline" />
+                </div>
+                <h3 className="text-sm font-bold text-primary mb-1">Harika Seçim</h3>
+                <p className="text-on-surface-variant text-[11px] font-medium uppercase tracking-widest">Bu listede kayıt yok.</p>
+              </motion.div>
+            ) : (
+              activeList.map(bill => renderBillCard(bill))
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
+
+      {editingPayment && (
+        <EditPaymentModal 
+          payment={editingPayment} 
+          onSave={handleUpdatePayment} 
+          onClose={() => setEditingPayment(null)} 
+        />
+      )}
+
+      {deleteId && (
+        <ConfirmModal 
+          title="Kaydı Sil"
+          message="Bu ödeme planını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
+          onConfirm={handleDeletePayment}
+          onCancel={() => setDeleteId(null)}
+        />
+      )}
+    </motion.div>
+  );
 };
 
 export default function App() {
@@ -2742,9 +3235,9 @@ export default function App() {
   const renderScreen = () => {
     switch (activeTab) {
       case 'home': return <HomeScreen user={user} transactions={transactions} payments={payments} setActiveTab={setActiveTab} />;
-      case 'transactions': return <TransactionsScreen user={user} transactions={transactions} />;
+      case 'transactions': return <TransactionsScreen user={user} transactions={transactions} payments={payments} />;
       case 'add': return <AddTransactionScreen user={user} onComplete={() => setActiveTab('home')} />;
-      case 'payments': return <PaymentsScreen user={user} payments={payments} onAddPayment={() => setActiveTab('add_payment')} />;
+      case 'payments': return <NewPaymentsScreen user={user} payments={payments} onAddPayment={() => setActiveTab('add_payment')} />;
       case 'add_payment': return <AddPaymentScreen user={user} onComplete={() => setActiveTab('payments')} />;
       case 'reports': return <ReportsScreen transactions={transactions} payments={payments} isDarkMode={isDarkMode} />;
       default: return <HomeScreen user={user} transactions={transactions} payments={payments} setActiveTab={setActiveTab} />;
@@ -2754,9 +3247,9 @@ export default function App() {
   const getTitle = () => {
     switch (activeTab) {
       case 'home': return '';
-      case 'transactions': return 'İşlemler';
+      case 'transactions': return 'Hesap Hareketleri';
       case 'add': return 'Yeni İşlem';
-      case 'payments': return 'Ödemeler';
+      case 'payments': return 'Planlı Ödemeler';
       case 'reports': return 'Analiz';
       default: return '';
     }
