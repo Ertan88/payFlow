@@ -92,7 +92,10 @@ import {
   Timestamp,
   User,
   OperationType,
-  handleFirestoreError
+  handleFirestoreError,
+  messaging,
+  getToken,
+  onMessage
 } from './firebase';
 
 // --- Types ---
@@ -1956,7 +1959,12 @@ const AddTransactionScreen = ({ user, onComplete, onCancel, editData, duplicateD
 const AddPaymentScreen = ({ user, onComplete, onCancel, editData }: { user: User, onComplete: () => void, onCancel: () => void, editData?: Payment | null }) => {
   const [amount, setAmount] = useState(editData?.amount?.toString() || '');
   const [title, setTitle] = useState(editData?.title || '');
-  const [dueDate, setDueDate] = useState(editData?.dueDate || new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState(() => {
+    if (editData?.dueDate) return editData.dueDate instanceof Timestamp ? editData.dueDate.toDate().toISOString().split('T')[0] : editData.dueDate;
+    const date = new Date();
+    date.setHours(0, 1, 0, 0); // 00:01
+    return date.toISOString().split('T')[0];
+  });
   const [remindOnDue, setRemindOnDue] = useState(editData?.reminders?.includes('day_of') || false);
   const [remindOneDayBefore, setRemindOneDayBefore] = useState(editData?.reminders?.includes('one_day_before') || false);
   const [recurrence, setRecurrence] = useState<'none' | 'weekly' | 'monthly' | 'yearly'>('none');
@@ -2239,9 +2247,39 @@ const SettingsScreen = ({ user, onLogout, onToggleTheme, isDarkMode, handleDataR
               </div>
             </button>
             <button 
-              onClick={() => {
-                setToast({ title: 'Test Bildirimi', message: 'Bu, ödeme hatırlatıcılarının nasıl görüneceğidir!' });
-                setTimeout(() => setToast(null), 5000);
+              type="button"
+              onClick={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setToast({ title: 'Test Bildirimi', message: 'Bildirim altyapısı kontrol ediliyor...' });
+                
+                // Zaman aşımı (Timeout) ekleyelim
+                const timeoutPromise = new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error('İstek zaman aşımına uğradı. İzinleri kontrol et.')), 5000)
+                );
+
+                try {
+                  // Messaging objesinin doğru başlatıldığından emin olalım
+                  const token = await getToken(messaging, { 
+                    vapidKey: 'BMD-zG03-b0XbJ_tshjPj7WwZk8RymQyN5J5l_Yp5f4X6k5a1KzN6b4u9Ua7f8Jv9k4xLw3A2V8C6Y7L8s_3o4g' 
+                  });
+                  
+                  if (token) {
+                    await navigator.clipboard.writeText(token);
+                    alert('Token başarıyla kopyalandı! \n\nToken: ' + token);
+                  } else {
+                    alert('Token alınamadı, FirebaseMessaging izni kontrol et.');
+                  }
+                } catch (e: any) {
+                  console.error('FCM Token Error:', e);
+                  // Daha spesifik hata mesajları
+                  if (e.code === 'messaging/token-subscribe-failed') {
+                    alert('Hata: Firebase sunucusuna bağlanılamadı (Auth Credential hatası). Lütfen tekrar giriş yapmayı veya sayfayı yenilemeyi dene.');
+                  } else {
+                    alert('Hata: ' + (e.message || 'Bilinmeyen FCM hatası.'));
+                  }
+                }
+                setToast(null);
               }}
               className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-surface-container-high transition-all text-sm font-bold text-on-surface border border-outline-variant/20"
             >
@@ -2613,11 +2651,38 @@ export default function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       setLoading(false);
+      
+      if (u) {
+        // FCM Request permission
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            const token = await getToken(messaging, { vapidKey: 'BMD-zG03-b0XbJ_tshjPj7WwZk8RymQyN5J5l_Yp5f4X6k5a1KzN6b4u9Ua7f8Jv9k4xLw3A2V8C6Y7L8s_3o4g' }); // FIXME: Replace with real VAPID key
+            console.log('Firebase Token:', token);
+            // Save token to your DB if needed
+          }
+        } catch (e) {
+          console.error('FCM Error', e);
+        }
+      }
     });
-    return () => unsubscribe();
+    // FCM Foreground Listener
+    const unsubscribeMessage = onMessage(messaging, (payload) => {
+      console.log('Message received. ', payload);
+      setToast({ 
+        title: payload.notification?.title || 'Yeni Bildirim', 
+        message: payload.notification?.body || 'Bildirim içeriği..' 
+      });
+      setTimeout(() => setToast(null), 5000);
+    });
+
+    return () => {
+        unsubscribe();
+        unsubscribeMessage();
+    };
   }, []);
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);

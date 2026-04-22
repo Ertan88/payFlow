@@ -17,12 +17,14 @@ import {
   getDocFromServer,
   Timestamp
 } from 'firebase/firestore';
+import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+export const messaging = getMessaging(app);
 export const googleProvider = new GoogleAuthProvider();
 
 // Error Handling
@@ -111,6 +113,8 @@ export {
   orderBy, 
   onSnapshot,
   onAuthStateChanged,
-  Timestamp
+  Timestamp,
+  getToken,
+  onMessage
 };
 export type { User };
